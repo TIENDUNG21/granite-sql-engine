@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["node"],
+    "paths": {
+      "@granite/core": ["./packages/core/src/index.ts"],
+      "@granite/core/node": ["./packages/core/src/node.ts"]
+    }
+  },
+  "include": ["packages/*/test", "tests", "vitest.config.ts"]
+}

@@ -15,7 +15,7 @@
   },
   "scripts": {
     "build": "tsc -b packages/core packages/cli && npm run build --workspace apps/studio",
-    "typecheck": "tsc -b packages/core packages/cli && tsc -p apps/studio --noEmit",
+    "typecheck": "tsc -b packages/core packages/cli && tsc -p apps/studio --noEmit && tsc -p tsconfig.test.json",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run",
