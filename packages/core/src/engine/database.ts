@@ -3,20 +3,41 @@ import type { TableSchema } from '../catalog/schema.ts';
 import { GraniteError } from '../errors.ts';
 import type { RowStore } from '../exec/row-source.ts';
 import { parse } from '../sql/parser.ts';
-import { MemoryRowStore } from '../storage/memory-store.ts';
+import { StorageEngine } from '../storage/engine.ts';
+import { MemoryFileSystem, type FileSystem } from '../storage/file.ts';
 import type { Value } from '../types/datatype.ts';
 import type { QueryResult } from './result.ts';
 import { executeStatement, type Engine } from './statements.ts';
 
+export interface DatabaseOptions {
+  /** Where the database files live; defaults to a fresh in-memory file system. */
+  readonly fs?: FileSystem;
+  /** Path of the database file within `fs` (default "granite.db"). */
+  readonly path?: string;
+  /** Clean pages kept in the buffer cache (default 2048 = 8 MiB). */
+  readonly cachePages?: number;
+}
+
 /** An embedded database. Each Session is one connection to it. */
 export class Database implements Engine {
-  readonly catalog = new Catalog();
-  readonly store: RowStore = new MemoryRowStore();
+  readonly storage: StorageEngine;
+  readonly catalog: Catalog;
   private defaultSession: Session | undefined;
   private closed = false;
 
-  static open(): Database {
-    return new Database();
+  private constructor(storage: StorageEngine) {
+    this.storage = storage;
+    this.catalog = new Catalog(storage);
+    this.catalog.load(storage.loadCatalog());
+  }
+
+  static open(options: DatabaseOptions = {}): Database {
+    const fs = options.fs ?? new MemoryFileSystem();
+    return new Database(StorageEngine.open(fs, options.path ?? 'granite.db', options));
+  }
+
+  get store(): RowStore {
+    return this.storage.rows;
   }
 
   session(): Session {
@@ -32,12 +53,12 @@ export class Database implements Engine {
 
   /** Run SQL and return the result of its last statement. */
   query(sql: string, params: readonly Value[] = []): QueryResult {
-    const results = this.execute(sql, params);
-    const last = results.at(-1);
-    if (!last)
+    const last = this.execute(sql, params).at(-1);
+    if (!last) {
       throw new GraniteError('syntax_error', 'no statement to run', {
         span: { start: 0, end: sql.length },
       }).locate(sql);
+    }
     return last;
   }
 
@@ -45,8 +66,20 @@ export class Database implements Engine {
     return this.catalog.tables();
   }
 
+  /** Run one statement atomically; on failure every change it made is undone. */
+  runAtomic<T>(fn: () => T): T {
+    try {
+      return this.storage.atomic(fn);
+    } catch (err) {
+      this.catalog.load(this.storage.loadCatalog());
+      throw err;
+    }
+  }
+
   close(): void {
+    if (this.closed) return;
     this.closed = true;
+    this.storage.close();
   }
 
   assertOpen(): void {
@@ -62,8 +95,8 @@ export class Session {
   }
 
   /**
-   * Parse and run every statement in `sql`. Errors are GraniteErrors located in
-   * `sql` (line, column, caret excerpt via formatError).
+   * Parse and run every statement in `sql`. Each statement is atomic. Errors are
+   * GraniteErrors located in `sql` (line, column, caret excerpt via formatError).
    */
   execute(sql: string, params: readonly Value[] = []): QueryResult[] {
     this.db.assertOpen();
@@ -71,7 +104,7 @@ export class Session {
     const results: QueryResult[] = [];
     for (const stmt of statements) {
       try {
-        results.push(executeStatement(this.db, stmt, params, sql));
+        results.push(this.db.runAtomic(() => executeStatement(this.db, stmt, params, sql)));
       } catch (err) {
         if (err instanceof GraniteError) {
           // Errors raised without a position point at the whole statement.

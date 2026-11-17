@@ -2,16 +2,33 @@ import { GraniteError } from '../errors.ts';
 import type { Ident } from '../sql/ast.ts';
 import type { IndexSchema, TableSchema } from './schema.ts';
 
+/** Where catalog changes are persisted (the storage engine's catalog tree). */
+export interface CatalogBacking {
+  putTable(table: TableSchema): void;
+  removeTable(name: string): void;
+}
+
 /**
  * The in-memory view of the schema: tables and their indexes by name.
  * Names are stored as resolved by the parser (bare names are lower-case).
- * Persistence is the storage layer's job; this class only keeps the maps
- * consistent and raises the right errors.
+ * Every change is written through to the backing store, if there is one.
  */
 export class Catalog {
   private readonly tableMap = new Map<string, TableSchema>();
+  private readonly backing: CatalogBacking | undefined;
   /** Bumped on every schema change so cached plans can be invalidated. */
   version = 0;
+
+  constructor(backing?: CatalogBacking) {
+    this.backing = backing;
+  }
+
+  /** Replace the whole catalog with stored definitions (no write-through). */
+  load(tables: readonly TableSchema[]): void {
+    this.tableMap.clear();
+    for (const t of tables) this.tableMap.set(t.name, t);
+    this.version++;
+  }
 
   tables(): TableSchema[] {
     return [...this.tableMap.values()].sort((a, b) => (a.name < b.name ? -1 : 1));
@@ -43,17 +60,14 @@ export class Catalog {
 
   /** Insert or replace a table definition. */
   putTable(table: TableSchema): void {
+    this.backing?.putTable(table);
     this.tableMap.set(table.name, table);
     this.version++;
   }
 
   removeTable(name: string): void {
+    this.backing?.removeTable(name);
     this.tableMap.delete(name);
-    this.version++;
-  }
-
-  clear(): void {
-    this.tableMap.clear();
     this.version++;
   }
 

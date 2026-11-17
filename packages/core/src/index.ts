@@ -1,5 +1,11 @@
 export { VERSION } from './version.ts';
-export { Database, Session } from './engine/database.ts';
+export { Database, Session, type DatabaseOptions } from './engine/database.ts';
+export {
+  MemoryFileSystem,
+  type BlockFile,
+  type CrashPolicy,
+  type FileSystem,
+} from './storage/file.ts';
 export type { QueryResult, ResultColumn } from './engine/result.ts';
 export { GraniteError, formatError, isGraniteError, type ErrorCode, type Span } from './errors.ts';
 export type { DataType, ExprType, Value } from './types/datatype.ts';

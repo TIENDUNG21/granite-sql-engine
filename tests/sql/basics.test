@@ -113,3 +113,23 @@ SELECT * FROM cities
 
 statement ok
 DROP TABLE IF EXISTS cities
+
+# Everything survives closing and reopening the database files.
+statement ok
+CREATE TABLE kept (id INTEGER PRIMARY KEY, label TEXT)
+
+statement ok
+CREATE INDEX kept_label ON kept (label)
+
+statement ok
+INSERT INTO kept VALUES (1, 'một'), (2, 'hai'), (3, 'ba')
+
+restart
+
+query IT
+SELECT id, label FROM kept WHERE label = 'hai'
+----
+2	hai
+
+statement error duplicate key value violates unique constraint "kept_pkey"
+INSERT INTO kept VALUES (3, 'again')
