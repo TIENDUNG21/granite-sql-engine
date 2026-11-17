@@ -1,6 +1,6 @@
 {
   "name": "@granite/core",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Granite SQL Engine core: parser, planner, executor, storage, WAL and MVCC.",
   "license": "MIT",
   "type": "module",

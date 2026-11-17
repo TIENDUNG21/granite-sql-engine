@@ -1,6 +1,6 @@
 {
   "name": "@granite/studio",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Granite Studio: run SQL against the engine in your browser.",
   "license": "MIT",
@@ -11,6 +11,6 @@
     "preview": "vite preview --port 5121 --strictPort"
   },
   "dependencies": {
-    "@granite/core": "0.1.0"
+    "@granite/core": "1.0.0"
   }
 }
