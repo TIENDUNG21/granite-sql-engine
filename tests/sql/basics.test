@@ -1,0 +1,115 @@
+# Basic DDL, INSERT and SELECT.
+
+statement ok
+CREATE TABLE cities (id INTEGER PRIMARY KEY, name TEXT NOT NULL, region TEXT, population INTEGER, area REAL)
+
+statement ok
+INSERT INTO cities VALUES
+  (1, 'Hà Nội', 'North', 8435700, 3359.82),
+  (2, 'Hồ Chí Minh', 'South', 9389700, 2061.04),
+  (3, 'Đà Nẵng', 'Central', 1220200, 1284.73),
+  (4, 'Huế', 'Central', 652572, 265.99),
+  (5, 'Cần Thơ', 'South', 1244700, 1440.4)
+
+query IT
+SELECT id, name FROM cities ORDER BY id
+----
+1	Hà Nội
+2	Hồ Chí Minh
+3	Đà Nẵng
+4	Huế
+5	Cần Thơ
+
+query T rowsort
+SELECT name FROM cities WHERE region = 'Central'
+----
+Huế
+Đà Nẵng
+
+query TI
+SELECT name, population FROM cities WHERE population > 1000000 AND region <> 'North' ORDER BY population DESC
+----
+Hồ Chí Minh	9389700
+Cần Thơ	1244700
+Đà Nẵng	1220200
+
+query TR
+SELECT name, area FROM cities ORDER BY area LIMIT 2
+----
+Huế	265.99
+Đà Nẵng	1284.73
+
+query I
+SELECT id FROM cities ORDER BY id LIMIT 2 OFFSET 3
+----
+4
+5
+
+query I
+SELECT id FROM cities ORDER BY id OFFSET 4
+----
+5
+
+query I
+SELECT id FROM cities LIMIT 0
+----
+
+# Expressions in the select list, aliases and ORDER BY on aliases and positions.
+query TI
+SELECT name AS city, population / 1000 AS thousands FROM cities ORDER BY thousands DESC LIMIT 2
+----
+Hồ Chí Minh	9389
+Hà Nội	8435
+
+query TT
+SELECT region, name FROM cities ORDER BY 1, 2 DESC
+----
+Central	Đà Nẵng
+Central	Huế
+North	Hà Nội
+South	Hồ Chí Minh
+South	Cần Thơ
+
+# ORDER BY an expression that is not in the select list.
+query T
+SELECT name FROM cities ORDER BY population * -1 LIMIT 1
+----
+Hồ Chí Minh
+
+query ITT
+SELECT c.id, c.name, c.region FROM cities AS c WHERE c.id = 3
+----
+3	Đà Nẵng	Central
+
+query I
+SELECT COUNT(*) FROM cities
+----
+5
+
+# SELECT without FROM.
+query IRTB
+SELECT 1 + 2, 1.5 * 2, 'a' || 'b', 1 < 2
+----
+3	3.0	ab	true
+
+query T
+SELECT DISTINCT region FROM cities ORDER BY region
+----
+Central
+North
+South
+
+# The star expands to every column in table order.
+query ITTIR
+SELECT * FROM cities WHERE id = 4
+----
+4	Huế	Central	652572	265.99
+
+statement ok
+DROP TABLE cities
+
+statement error table "cities" does not exist
+SELECT * FROM cities
+
+statement ok
+DROP TABLE IF EXISTS cities

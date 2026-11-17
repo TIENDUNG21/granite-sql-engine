@@ -1,0 +1,90 @@
+# TEXT is Unicode: stored as NFC, compared and measured by code point.
+
+statement ok
+CREATE TABLE words (id INTEGER PRIMARY KEY, w TEXT)
+
+# 'Việt' written precomposed (NFC) and decomposed (NFD) is the same value.
+statement ok
+INSERT INTO words VALUES (1, 'Việt'), (2, 'Việt'), (3, '😀 smile'), (4, '𠀀'), (5, ''), (6, '～')
+
+query IT
+SELECT id, w FROM words WHERE w = 'Việt' ORDER BY id
+----
+1	Việt
+2	Việt
+
+query I
+SELECT COUNT(DISTINCT w) FROM words WHERE id <= 2
+----
+1
+
+query II
+SELECT id, LENGTH(w) FROM words WHERE id <= 5 ORDER BY id
+----
+1	4
+2	4
+3	7
+4	1
+5	0
+
+query TTT
+SELECT UPPER(w), LOWER('ĐÀ NẴNG'), SUBSTR(w, 2, 2) FROM words WHERE id = 1
+----
+VIỆT	đà nẵng	iệ
+
+query TT
+SELECT SUBSTR(w, 1, 1), SUBSTR(w, 3) FROM words WHERE id = 3
+----
+😀	smile
+
+query TT
+SELECT SUBSTR('abc', 0, 2), SUBSTR('abc', 5)
+----
+a	(empty)
+
+statement error negative substring length not allowed
+SELECT SUBSTR('abc', 1, -1)
+
+query T
+SELECT w FROM words WHERE w LIKE 'Vi_t' ORDER BY id LIMIT 1
+----
+Việt
+
+query T
+SELECT w FROM words WHERE w LIKE '%smile'
+----
+😀 smile
+
+query T
+SELECT w FROM words WHERE w LIKE '_ %'
+----
+😀 smile
+
+query B
+SELECT 'a.c' LIKE 'a_c' AND NOT 'abc' LIKE 'a.c'
+----
+true
+
+# Code-point order: U+FF5E sorts before an astral character.
+query T
+SELECT w FROM words WHERE id >= 3 ORDER BY w
+----
+(empty)
+～
+😀 smile
+𠀀
+
+query TTT
+SELECT TRIM('  x  '), REPLACE('a-b-c', '-', '+'), 'it''s'
+----
+x	a+b+c	it's
+
+query IR
+SELECT ABS(-3), ROUND(2.345, 2)
+----
+3	2.35
+
+query RRI
+SELECT ROUND(-2.5), ROUND(2.5), ROUND(7)
+----
+-3.0	3.0	7

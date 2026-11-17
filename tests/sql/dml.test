@@ -1,0 +1,144 @@
+# INSERT, UPDATE, DELETE and constraints.
+
+statement ok
+CREATE TABLE items (id INTEGER PRIMARY KEY, sku TEXT UNIQUE, qty INTEGER NOT NULL DEFAULT 0, note TEXT DEFAULT 'none')
+
+statement ok
+INSERT INTO items (id, sku) VALUES (1, 'A-1'), (2, 'B-2')
+
+query ITIT
+SELECT * FROM items ORDER BY id
+----
+1	A-1	0	none
+2	B-2	0	none
+
+statement ok
+INSERT INTO items (sku, id, qty) VALUES ('C-3', 3, 5)
+
+statement error null value in column "qty" of table "items" violates not-null constraint
+INSERT INTO items (id, sku, qty) VALUES (4, 'D-4', NULL)
+
+statement error null value in column "id"
+INSERT INTO items (sku) VALUES ('E-5')
+
+statement error duplicate key value violates unique constraint "items_pkey"
+INSERT INTO items (id, sku) VALUES (1, 'Z-9')
+
+statement error duplicate key value violates unique constraint "items_sku_key"
+INSERT INTO items (id, sku) VALUES (9, 'A-1')
+
+statement error INSERT has more expressions than target columns
+INSERT INTO items (id, sku) VALUES (10, 'x', 1)
+
+statement error INSERT has fewer expressions than target columns
+INSERT INTO items VALUES (10, 'x')
+
+statement error column "price" of table "items" does not exist
+INSERT INTO items (id, price) VALUES (10, 1)
+
+statement error column "id" specified more than once
+INSERT INTO items (id, id) VALUES (10, 11)
+
+# UPDATE reads the old row: swapping through expressions works.
+statement ok
+UPDATE items SET qty = qty + 10, note = sku WHERE id >= 2
+
+query IIT
+SELECT id, qty, note FROM items ORDER BY id
+----
+1	0	none
+2	10	B-2
+3	15	C-3
+
+# An UPDATE that touches every row must not loop over its own new versions.
+statement ok
+UPDATE items SET id = id + 100
+
+query I
+SELECT id FROM items ORDER BY id
+----
+101
+102
+103
+
+statement error duplicate key value violates unique constraint "items_sku_key"
+UPDATE items SET sku = 'same'
+
+statement error null value in column "qty"
+UPDATE items SET qty = NULL WHERE id = 101
+
+statement ok
+DELETE FROM items WHERE qty > 12
+
+query I
+SELECT id FROM items ORDER BY id
+----
+101
+102
+
+# INSERT ... SELECT copies rows, here into a second table.
+statement ok
+CREATE TABLE archive (id INTEGER, sku TEXT)
+
+statement ok
+INSERT INTO archive SELECT id, sku FROM items WHERE id > 101
+
+query IT
+SELECT * FROM archive
+----
+102	B-2
+
+statement error INSERT has 2 target columns but the query returns 1
+INSERT INTO archive SELECT id FROM items
+
+statement ok
+DELETE FROM items
+
+query I
+SELECT COUNT(*) FROM items
+----
+0
+
+# Parameterless defaults may be expressions over constants.
+statement ok
+CREATE TABLE d (a INTEGER DEFAULT 2 * 21, b TEXT DEFAULT 'x' || 'y', c BOOLEAN DEFAULT (NOT FALSE))
+
+statement ok
+INSERT INTO d (a) VALUES (1)
+
+statement ok
+INSERT INTO d (b) VALUES ('z')
+
+query ITB rowsort
+SELECT * FROM d
+----
+1	xy	true
+42	z	true
+
+statement error column "a" is INTEGER, but the value is TEXT
+CREATE TABLE bad (a INTEGER DEFAULT 'x')
+
+statement error table "d" already exists
+CREATE TABLE d (x INTEGER)
+
+statement ok
+CREATE TABLE IF NOT EXISTS d (x INTEGER)
+
+statement error column "a" specified more than once
+CREATE TABLE dup (a INTEGER, a TEXT)
+
+statement error multiple primary keys for table "pk2" are not allowed
+CREATE TABLE pk2 (a INTEGER PRIMARY KEY, b INTEGER, PRIMARY KEY (b))
+
+# Composite primary keys.
+statement ok
+CREATE TABLE lines (order_id INTEGER, line INTEGER, PRIMARY KEY (order_id, line))
+
+statement ok
+INSERT INTO lines VALUES (1, 1), (1, 2), (2, 1)
+
+statement error duplicate key value violates unique constraint "lines_pkey"
+INSERT INTO lines VALUES (1, 2)
+
+statement error cannot drop index "lines_pkey" because it enforces the primary key
+DROP INDEX lines_pkey

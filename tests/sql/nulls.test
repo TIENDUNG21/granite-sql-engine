@@ -1,0 +1,163 @@
+# Three-valued logic: NULL is "unknown", not a value.
+
+statement ok
+CREATE TABLE t (id INTEGER PRIMARY KEY, a INTEGER, b BOOLEAN, s TEXT)
+
+statement ok
+INSERT INTO t VALUES (1, 10, TRUE, 'x'), (2, NULL, FALSE, NULL), (3, 30, NULL, 'z'), (4, NULL, NULL, NULL)
+
+# Comparisons with NULL are NULL, and WHERE keeps only TRUE.
+query I
+SELECT id FROM t WHERE a = NULL
+----
+
+query I
+SELECT id FROM t WHERE a IS NULL ORDER BY id
+----
+2
+4
+
+query I
+SELECT id FROM t WHERE a IS NOT NULL ORDER BY id
+----
+1
+3
+
+query BBBB
+SELECT NULL = NULL, NULL <> 1, NULL IS NULL, 1 IS NOT NULL
+----
+NULL	NULL	true	true
+
+# AND / OR truth tables.
+query BBBBBB
+SELECT TRUE AND NULL, FALSE AND NULL, NULL AND NULL, TRUE OR NULL, FALSE OR NULL, NULL OR NULL
+----
+NULL	false	NULL	true	NULL	NULL
+
+query BB
+SELECT NOT NULL, NOT (NULL AND FALSE)
+----
+NULL	true
+
+query I
+SELECT id FROM t WHERE b OR a > 20 ORDER BY id
+----
+1
+3
+
+query I
+SELECT id FROM t WHERE NOT b ORDER BY id
+----
+2
+
+# IN with NULLs on either side.
+query BBBB
+SELECT 1 IN (1, NULL), 2 IN (1, NULL), 2 NOT IN (1, NULL), NULL IN (1, 2)
+----
+true	NULL	NULL	NULL
+
+query I
+SELECT id FROM t WHERE a NOT IN (10, 20) ORDER BY id
+----
+3
+
+# NOT IN over a subquery that returns NULL selects nothing.
+query I
+SELECT id FROM t WHERE id NOT IN (SELECT a FROM t)
+----
+
+query I
+SELECT id FROM t WHERE id NOT IN (SELECT a FROM t WHERE a IS NOT NULL) ORDER BY id
+----
+1
+2
+3
+4
+
+# An empty subquery: IN is false and NOT IN is true, even for NULL.
+query BB
+SELECT NULL IN (SELECT a FROM t WHERE id > 100), NULL NOT IN (SELECT a FROM t WHERE id > 100)
+----
+false	true
+
+# Arithmetic and concatenation propagate NULL.
+query IT
+SELECT a + 1, s || '!' FROM t ORDER BY id
+----
+11	x!
+NULL	NULL
+31	z!
+NULL	NULL
+
+# NULLs sort last ascending and first descending, unless told otherwise.
+query I
+SELECT a FROM t ORDER BY a
+----
+10
+30
+NULL
+NULL
+
+query I
+SELECT a FROM t ORDER BY a DESC
+----
+NULL
+NULL
+30
+10
+
+query I
+SELECT a FROM t ORDER BY a NULLS FIRST
+----
+NULL
+NULL
+10
+30
+
+query I
+SELECT a FROM t ORDER BY a DESC NULLS LAST
+----
+30
+10
+NULL
+NULL
+
+# DISTINCT treats NULLs as equal.
+query T
+SELECT DISTINCT s FROM t ORDER BY s
+----
+x
+z
+NULL
+
+# CASE without a match and without ELSE gives NULL.
+query T
+SELECT CASE WHEN a > 100 THEN 'big' END FROM t WHERE id = 1
+----
+NULL
+
+query I
+SELECT COALESCE(a, -1) FROM t ORDER BY id
+----
+10
+-1
+30
+-1
+
+query I
+SELECT NULLIF(a, 10) FROM t ORDER BY id
+----
+NULL
+NULL
+30
+NULL
+
+# Unique indexes allow many NULLs.
+statement ok
+CREATE UNIQUE INDEX t_s ON t (s)
+
+statement ok
+INSERT INTO t VALUES (5, 50, TRUE, NULL)
+
+statement error duplicate key value violates unique constraint "t_s"
+INSERT INTO t VALUES (6, 60, TRUE, 'x')

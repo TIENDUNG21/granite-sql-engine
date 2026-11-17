@@ -1,0 +1,133 @@
+# Static types: INTEGER, REAL, TEXT, BOOLEAN.
+
+statement ok
+CREATE TABLE m (id INTEGER PRIMARY KEY, qty INTEGER, price REAL, label TEXT, ok BOOLEAN)
+
+statement ok
+INSERT INTO m VALUES (1, 7, 2.5, 'seven', TRUE), (2, -7, 0.1, 'minus', FALSE)
+
+# INTEGER / INTEGER truncates toward zero; REAL division does not.
+query IIIRR
+SELECT 7 / 2, -7 / 2, 7 % 3, 7 / 2.0, 1.0 / 4
+----
+3	-3	1	3.5	0.25
+
+query II
+SELECT qty / 2, qty % 4 FROM m ORDER BY id
+----
+3	3
+-3	-3
+
+query R
+SELECT qty * price FROM m WHERE id = 1
+----
+17.5
+
+query R
+SELECT price + price + price FROM m WHERE id = 2
+----
+0.30000000000000004
+
+# An INTEGER literal is accepted by a REAL column and stored as a number.
+statement ok
+INSERT INTO m VALUES (3, 1, 4, 'four', NULL)
+
+query R
+SELECT price FROM m WHERE id = 3
+----
+4.0
+
+statement error division by zero
+SELECT 1 / 0
+
+statement error division by zero
+SELECT 1.5 / 0
+
+statement error division by zero
+SELECT qty % 0 FROM m
+
+statement error integer out of range
+SELECT 9007199254740991 + 1
+
+statement error integer out of range
+SELECT 4000000000 * 4000000000
+
+statement error is out of range
+SELECT 9007199254740993
+
+# Comparing numbers of both kinds is fine; mixing families is a type error.
+query BB
+SELECT 1 = 1.0, 2 > 1.5
+----
+true	true
+
+statement error cannot compare column "qty" (INTEGER) with TEXT
+SELECT * FROM m WHERE qty = 'seven'
+
+statement error operator "+" cannot be applied to column "label" (TEXT) and INTEGER
+SELECT label + 1 FROM m
+
+statement error argument of WHERE must be BOOLEAN, not column "qty" (INTEGER)
+SELECT * FROM m WHERE qty
+
+statement error argument of AND must be BOOLEAN
+SELECT * FROM m WHERE ok AND 1
+
+statement error column "qty" is INTEGER, but the value is TEXT
+INSERT INTO m (id, qty) VALUES (9, 'many')
+
+statement error column "qty" is INTEGER, but the value is REAL
+INSERT INTO m (id, qty) VALUES (9, 1.5)
+
+statement error column "label" is TEXT, but the value is INTEGER
+UPDATE m SET label = 5
+
+statement error LIKE needs TEXT
+SELECT * FROM m WHERE qty LIKE '7%'
+
+statement error CASE branches have incompatible types
+SELECT CASE WHEN ok THEN 1 ELSE 'one' END FROM m
+
+# CASE unifies INTEGER and REAL to REAL.
+query R
+SELECT CASE WHEN id = 1 THEN 1 ELSE 0.5 END FROM m ORDER BY id LIMIT 2
+----
+1.0
+0.5
+
+# Explicit casts.
+query IRTBI
+SELECT CAST('42' AS INTEGER), CAST(' 2.5e1 ' AS REAL), CAST(3.0 AS TEXT), CAST('yes' AS BOOLEAN), CAST(9.99 AS INTEGER)
+----
+42	25.0	3.0	true	9
+
+query TTI
+SELECT CAST(TRUE AS TEXT), CAST(12 AS TEXT), CAST(FALSE AS INTEGER)
+----
+true	12	0
+
+statement error invalid input for type INTEGER: "4x"
+SELECT CAST('4x' AS INTEGER)
+
+statement error invalid input for type BOOLEAN
+SELECT CAST('maybe' AS BOOLEAN)
+
+# || needs TEXT on one side and renders the other.
+query TT
+SELECT label || qty, 'p=' || price FROM m WHERE id = 1
+----
+seven7	p=2.5
+
+statement error operator "||" needs TEXT on one side
+SELECT 1 || 2
+
+# Unary minus and nested arithmetic.
+query IR
+SELECT -qty, -(price * 2) FROM m WHERE id = 1
+----
+-7	-5.0
+
+query B
+SELECT NOT ok FROM m WHERE id = 2
+----
+true
