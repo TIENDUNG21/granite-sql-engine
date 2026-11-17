@@ -147,6 +147,10 @@ All twelve measurements and the method are in [docs/BENCHMARKS.md](docs/BENCHMAR
 - The commit log covers 16.5 million write transactions over the life of a database, with no id wraparound.
 - Studio keeps its database in memory only; reloading the page resets it.
 
+## Roadmap
+
+These were left out of 1.0 on purpose, in rough order of value: saving Studio databases to IndexedDB (export and import of the in-memory files), histograms in `ANALYZE`, prepared statements with a plan cache, merging underfull B+tree nodes, sorts and hash joins that spill to disk, correlated subqueries and `EXISTS`, and serializable snapshot isolation.
+
 ## Building from source
 
 Requires Node 22.18 or newer, which runs TypeScript files directly for the scripts.
