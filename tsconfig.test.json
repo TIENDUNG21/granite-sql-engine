@@ -11,5 +11,5 @@
       "@granite/core/node": ["./packages/core/src/node.ts"]
     }
   },
-  "include": ["packages/*/test", "tests", "bench", "vitest.config.ts"]
+  "include": ["packages/*/test", "tests", "bench", "scripts", "vitest.config.ts"]
 }
