@@ -9,6 +9,8 @@ export interface Page {
   readonly no: number;
   readonly data: Uint8Array;
   readonly view: DataView;
+  /** Pager clock value of the last access, for eviction. */
+  used: number;
 }
 
 /**
@@ -33,7 +35,7 @@ const FREE_NEXT = 8;
 export const PAGE_TYPE_FREE = 4;
 
 function makePage(no: number, data: Uint8Array): Page {
-  return { no, data, view: new DataView(data.buffer, data.byteOffset, data.byteLength) };
+  return { no, data, view: new DataView(data.buffer, data.byteOffset, data.byteLength), used: 0 };
 }
 
 export interface PagerOptions {
@@ -56,8 +58,10 @@ export interface PagerOptions {
  * undone by restoring them.
  */
 export class Pager {
-  /** Cached pages in least-recently-used order (Map iteration order). */
+  /** Cached pages; each remembers when it was last used. */
   private readonly cache = new Map<number, Page>();
+  /** Advances on every page access. */
+  private clock = 0;
   /** Pages modified since the last commit. */
   private readonly dirty = new Set<number>();
   /** Pages committed to the log but not yet written to the data file. */
@@ -122,7 +126,8 @@ export class Pager {
   }
 
   headerU32(offset: number): number {
-    return this.read(0).view.getUint32(offset);
+    // Page 0 is always cached and never evicted.
+    return this.cache.get(0)!.view.getUint32(offset);
   }
 
   setHeaderU32(offset: number, value: number): void {
@@ -135,9 +140,8 @@ export class Pager {
   read(no: number): Page {
     const cached = this.cache.get(no);
     if (cached) {
-      // Refresh LRU position.
-      this.cache.delete(no);
-      this.cache.set(no, cached);
+      // A counter instead of reordering the map: reads are the hottest path in the engine.
+      cached.used = ++this.clock;
       return cached;
     }
     if (no < 0 || !Number.isInteger(no)) {
@@ -153,6 +157,7 @@ export class Pager {
     const data = new Uint8Array(PAGE_SIZE);
     data.set(raw);
     const page = makePage(no, data);
+    page.used = ++this.clock;
     // No eviction here: callers may still hold pages they read earlier in the
     // statement, so the cache only shrinks between statements (see commit).
     this.cache.set(no, page);
@@ -205,13 +210,21 @@ export class Pager {
     return this.headerU32(HEADER.freeCount);
   }
 
+  /**
+   * Drop the least recently used clean pages once the cache is over capacity,
+   * down to 90% of it so that the sort is paid for rarely. Dirty pages and pages
+   * not yet checkpointed must stay: the data file does not have their contents.
+   */
   private evict(): void {
     if (this.cache.size <= this.capacity) return;
-    for (const no of this.cache.keys()) {
-      if (this.cache.size <= this.capacity) break;
-      if (no === 0 || this.dirty.has(no) || this.unflushed.has(no)) continue;
-      this.cache.delete(no);
+    const clean: Page[] = [];
+    for (const page of this.cache.values()) {
+      if (page.no !== 0 && !this.dirty.has(page.no) && !this.unflushed.has(page.no))
+        clean.push(page);
     }
+    clean.sort((a, b) => a.used - b.used);
+    const excess = this.cache.size - Math.floor(this.capacity * 0.9);
+    for (const page of clean.slice(0, excess)) this.cache.delete(page.no);
   }
 
   // ------------------------------------------------------ atomic sections
