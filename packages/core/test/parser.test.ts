@@ -325,4 +325,25 @@ describe('syntax errors', () => {
     expect(syntaxError('SELECT * FROM (SELECT 1) x').code).toBe('feature_not_supported');
     expect(syntaxError('SELECT EXISTS (SELECT 1)').code).toBe('feature_not_supported');
   });
+
+  it('does not take unsupported keywords for aliases', () => {
+    const right = syntaxError('SELECT * FROM a RIGHT JOIN b ON a.x = b.x');
+    expect([right.code, right.message, right.hint]).toEqual([
+      'feature_not_supported',
+      'RIGHT JOIN is not supported',
+      'swap the two tables and use LEFT JOIN',
+    ]);
+    expect(right.column).toBe(17);
+    expect(syntaxError('SELECT * FROM a FULL OUTER JOIN b ON true').message).toBe(
+      'FULL JOIN is not supported',
+    );
+    for (const op of ['UNION', 'INTERSECT', 'EXCEPT']) {
+      const err = syntaxError(`SELECT 1 ${op} SELECT 2`);
+      expect([err.code, err.message, err.column]).toEqual([
+        'feature_not_supported',
+        `${op} is not supported`,
+        10,
+      ]);
+    }
+  });
 });

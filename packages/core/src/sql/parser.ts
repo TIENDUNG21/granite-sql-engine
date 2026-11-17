@@ -118,6 +118,15 @@ class Parser {
     return new GraniteError('syntax_error', message, { span, hint }).locate(this.source);
   }
 
+  /** Throw feature_not_supported pointing at the current token. */
+  private unsupported(message: string, hint?: string): never {
+    const tok = this.peek();
+    throw new GraniteError('feature_not_supported', message, {
+      span: { start: tok.start, end: tok.end },
+      hint,
+    }).locate(this.source);
+  }
+
   private unexpected(expected: string, tok: Token = this.peek()): GraniteError {
     const found = tok.kind === 'eof' ? 'end of input' : `"${tok.text}"`;
     return this.error(`expected ${expected}, found ${found}`, { start: tok.start, end: tok.end });
@@ -154,6 +163,8 @@ class Parser {
       while (this.acceptSymbol(';'));
       if (this.peek().kind === 'eof') return statements;
       statements.push(this.parseStatementInner());
+      const setOp = ['UNION', 'INTERSECT', 'EXCEPT'].find((w) => this.isWord(w));
+      if (setOp) this.unsupported(`${setOp} is not supported`);
       if (!this.acceptSymbol(';') && this.peek().kind !== 'eof') {
         throw this.unexpected('";" or end of input');
       }
@@ -321,6 +332,10 @@ class Parser {
         };
         continue;
       }
+      if (this.isWord('RIGHT')) {
+        this.unsupported('RIGHT JOIN is not supported', 'swap the two tables and use LEFT JOIN');
+      }
+      if (this.isWord('FULL')) this.unsupported('FULL JOIN is not supported');
       let joinType: 'inner' | 'left' | undefined;
       if (this.isWord('JOIN')) joinType = 'inner';
       else if (this.acceptWord('INNER')) joinType = 'inner';
