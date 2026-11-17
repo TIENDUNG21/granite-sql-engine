@@ -20,7 +20,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "clean": "tsc -b --clean packages/core packages/cli"
+    "clean": "tsc -b --clean packages/core packages/cli",
+    "bench": "node bench/bench.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
