@@ -1,4 +1,8 @@
 #!/usr/bin/env node
-import { VERSION } from '@granite/core';
+import { main } from './main.ts';
 
-process.stdout.write(`granite ${VERSION}\n`);
+process.exitCode = await main(process.argv.slice(2), {
+  stdin: process.stdin,
+  write: (text) => process.stdout.write(text),
+  writeError: (text) => process.stderr.write(text),
+});
