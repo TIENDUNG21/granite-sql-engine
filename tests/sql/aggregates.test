@@ -1,0 +1,147 @@
+# GROUP BY, HAVING and aggregate functions.
+
+statement ok
+CREATE TABLE sales (id INTEGER PRIMARY KEY, region TEXT, product TEXT, qty INTEGER, price REAL)
+
+statement ok
+INSERT INTO sales VALUES
+  (1, 'North', 'tea', 3, 2.5),
+  (2, 'North', 'coffee', 1, 4.0),
+  (3, 'South', 'tea', 5, 2.5),
+  (4, 'South', 'tea', NULL, 2.5),
+  (5, 'South', 'coffee', 2, NULL),
+  (6, NULL, 'tea', 1, 3.0)
+
+query IIIRR
+SELECT count(*), count(qty), sum(qty), avg(qty), sum(price)
+FROM sales
+----
+6	5	12	2.4	14.5
+
+query IIII
+SELECT min(qty), max(qty), min(id), max(id) FROM sales
+----
+1	5	1	6
+
+query TT
+SELECT min(product), max(region) FROM sales
+----
+coffee	South
+
+# Aggregates over no rows: COUNT is 0, the others are NULL, and there is one row.
+query IIRI
+SELECT count(*), sum(qty), avg(qty), max(qty) FROM sales WHERE id > 100
+----
+0	NULL	NULL	NULL
+
+# ...but grouping no rows yields no groups.
+query TI
+SELECT region, count(*) FROM sales WHERE id > 100 GROUP BY region
+----
+
+# NULL forms its own group.
+query TII
+SELECT region, count(*), sum(qty) FROM sales GROUP BY region ORDER BY region
+----
+North	2	4
+South	3	7
+NULL	1	1
+
+query TTI
+SELECT region, product, count(*) FROM sales GROUP BY region, product ORDER BY region, product
+----
+North	coffee	1
+North	tea	1
+South	coffee	1
+South	tea	2
+NULL	tea	1
+
+query TI
+SELECT product, sum(qty) AS total FROM sales GROUP BY product HAVING sum(qty) > 3 ORDER BY total DESC
+----
+tea	9
+
+# HAVING may use an aggregate that is not in the select list.
+query T
+SELECT region FROM sales GROUP BY region HAVING count(*) >= 2 AND max(price) > 3 ORDER BY region
+----
+North
+
+# Group by an expression and refer to it again.
+query II
+SELECT qty % 2, count(*) FROM sales WHERE qty IS NOT NULL GROUP BY qty % 2 ORDER BY 1
+----
+0	1
+1	4
+
+query TI
+SELECT upper(product) AS p, count(*) FROM sales GROUP BY p ORDER BY p
+----
+COFFEE	2
+TEA	4
+
+query TI
+SELECT product, count(*) FROM sales GROUP BY 1 ORDER BY 2 DESC, 1
+----
+tea	4
+coffee	2
+
+query IIR
+SELECT count(DISTINCT product), count(DISTINCT region), sum(DISTINCT price)
+FROM sales
+----
+2	2	9.5
+
+query R
+SELECT avg(price) FROM sales WHERE region = 'South'
+----
+2.5
+
+# Arithmetic over aggregates.
+query TR
+SELECT region, sum(qty * price) / count(*) FROM sales WHERE region IS NOT NULL GROUP BY region ORDER BY region
+----
+North	5.75
+South	4.166666666666667
+
+query R
+SELECT round(sum(qty * price), 1) FROM sales
+----
+27.0
+
+# ORDER BY an aggregate not shown.
+query T
+SELECT product FROM sales GROUP BY product ORDER BY sum(qty) DESC
+----
+tea
+coffee
+
+# SUM keeps INTEGER and detects overflow.
+statement ok
+CREATE TABLE big (v INTEGER)
+
+statement ok
+INSERT INTO big VALUES (9007199254740990), (1)
+
+query I
+SELECT sum(v) FROM big
+----
+9007199254740991
+
+statement ok
+INSERT INTO big VALUES (1)
+
+statement error integer out of range
+SELECT sum(v) FROM big
+
+statement error function sum() needs a number, not column "product" (TEXT)
+SELECT sum(product) FROM sales
+
+statement error only count() accepts *
+SELECT max(*) FROM sales
+
+# An aggregate without FROM sees a single row.
+query II
+SELECT count(*), max(7)
+----
+1	7

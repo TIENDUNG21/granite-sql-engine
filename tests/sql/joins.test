@@ -1,0 +1,145 @@
+# INNER, LEFT and CROSS joins, with and without indexes.
+
+statement ok
+CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT NOT NULL, country TEXT)
+
+statement ok
+CREATE TABLE books (id INTEGER PRIMARY KEY, author_id INTEGER, title TEXT NOT NULL, year INTEGER)
+
+statement ok
+INSERT INTO authors VALUES (1, 'Nguyễn Du', 'VN'), (2, 'Tolstoy', 'RU'), (3, 'Austen', 'UK'), (4, 'Unknown', NULL)
+
+statement ok
+INSERT INTO books VALUES
+  (10, 1, 'Truyện Kiều', 1820),
+  (11, 2, 'War and Peace', 1869),
+  (12, 2, 'Anna Karenina', 1878),
+  (13, 3, 'Emma', 1815),
+  (14, NULL, 'Anonymous Poems', 1700),
+  (15, 9, 'Orphan Record', 2000)
+
+query TT rowsort
+SELECT a.name, b.title FROM authors a JOIN books b ON b.author_id = a.id
+----
+Austen	Emma
+Nguyễn Du	Truyện Kiều
+Tolstoy	Anna Karenina
+Tolstoy	War and Peace
+
+# The same join written with a comma and WHERE.
+query TT rowsort
+SELECT a.name, b.title FROM authors a, books b WHERE b.author_id = a.id
+----
+Austen	Emma
+Nguyễn Du	Truyện Kiều
+Tolstoy	Anna Karenina
+Tolstoy	War and Peace
+
+# LEFT JOIN keeps unmatched rows of the left side, padded with NULLs.
+query TT
+SELECT a.name, b.title FROM authors a LEFT JOIN books b ON b.author_id = a.id ORDER BY a.id, b.id
+----
+Nguyễn Du	Truyện Kiều
+Tolstoy	War and Peace
+Tolstoy	Anna Karenina
+Austen	Emma
+Unknown	NULL
+
+# A NULL key never matches, not even another NULL.
+query TT
+SELECT b.title, a.name FROM books b LEFT JOIN authors a ON a.id = b.author_id WHERE a.id IS NULL ORDER BY b.id
+----
+Anonymous Poems	NULL
+Orphan Record	NULL
+
+# ON filters the right side before padding; WHERE filters after the join.
+query TT
+SELECT a.name, b.title FROM authors a LEFT JOIN books b ON b.author_id = a.id AND b.year > 1870 ORDER BY a.id
+----
+Nguyễn Du	NULL
+Tolstoy	Anna Karenina
+Austen	NULL
+Unknown	NULL
+
+query TT
+SELECT a.name, b.title FROM authors a LEFT JOIN books b ON b.author_id = a.id WHERE b.year > 1870 ORDER BY a.id
+----
+Tolstoy	Anna Karenina
+
+# An ON condition on the left side only limits which rows can match.
+query TI
+SELECT a.name, count(b.id) FROM authors a LEFT JOIN books b ON b.author_id = a.id AND a.country = 'RU' GROUP BY a.name ORDER BY a.name
+----
+Austen	0
+Nguyễn Du	0
+Tolstoy	2
+Unknown	0
+
+query I
+SELECT count(*) FROM authors CROSS JOIN books
+----
+24
+
+query I
+SELECT count(*) FROM authors a JOIN books b ON a.id < b.author_id
+----
+8
+
+# Self join with aliases.
+query TT
+SELECT x.title, y.title FROM books x JOIN books y ON x.author_id = y.author_id AND x.id < y.id
+----
+War and Peace	Anna Karenina
+
+# Three tables; the planner may reorder them, the result must not change.
+statement ok
+CREATE TABLE prizes (book_id INTEGER, prize TEXT)
+
+statement ok
+INSERT INTO prizes VALUES (11, 'Classic'), (13, 'Classic'), (13, 'Romance'), (99, 'Lost')
+
+query TTT rowsort
+SELECT a.name, b.title, p.prize FROM prizes p JOIN books b ON b.id = p.book_id JOIN authors a ON a.id = b.author_id
+----
+Austen	Emma	Classic
+Austen	Emma	Romance
+Tolstoy	War and Peace	Classic
+
+# A secondary index on the join column does not change the answer.
+statement ok
+CREATE INDEX books_author ON books (author_id)
+
+query TT rowsort
+SELECT a.name, b.title FROM authors a JOIN books b ON b.author_id = a.id WHERE a.id = 2
+----
+Tolstoy	Anna Karenina
+Tolstoy	War and Peace
+
+query I
+SELECT id FROM books WHERE author_id = 2 ORDER BY id
+----
+11
+12
+
+query I
+SELECT id FROM books WHERE author_id IS NULL
+----
+14
+
+# Join keys of INTEGER and REAL compare as numbers.
+statement ok
+CREATE TABLE rates (year REAL, rate REAL)
+
+statement ok
+INSERT INTO rates VALUES (1820.0, 0.5), (1869.0, 0.75)
+
+query TR rowsort
+SELECT b.title, r.rate FROM books b JOIN rates r ON r.year = b.year
+----
+Truyện Kiều	0.5
+War and Peace	0.75
+
+# A join condition that folds to FALSE produces nothing.
+query T
+SELECT b.title FROM books b JOIN authors a ON 1 = 0
+----
