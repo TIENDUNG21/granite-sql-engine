@@ -61,6 +61,23 @@ describe('transactions', () => {
     expect(db.query('SELECT a FROM t ORDER BY a').rows).toEqual([[1], [3]]);
   });
 
+  it('updates more pages in one statement than the cache holds', () => {
+    const fs = new MemoryFileSystem();
+    const db = Database.open({ fs, cachePages: 16 });
+    db.execute(
+      'CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER, pad TEXT); CREATE INDEX t_b ON t (b)',
+    );
+    const rows = Array.from({ length: 3000 }, (_, i) => `(${i}, ${i % 7}, '${'x'.repeat(40)}')`);
+    db.execute(`INSERT INTO t VALUES ${rows.join(', ')}`);
+    // After a checkpoint the pages are clean, so the cache shrinks and the UPDATE reads them back.
+    db.execute('CHECKPOINT');
+    db.execute('UPDATE t SET b = b + 100');
+    db.close();
+    const again = Database.open({ fs, cachePages: 16 });
+    expect(again.query('SELECT count(*), min(b), max(b) FROM t').rows).toEqual([[3000, 100, 106]]);
+    expect(again.query('SELECT count(*) FROM t WHERE b = 103').rows).toEqual([[429]]);
+  });
+
   it('VACUUM removes dead versions and their index entries', () => {
     const db = Database.open();
     db.execute('CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER); CREATE INDEX t_b ON t (b)');

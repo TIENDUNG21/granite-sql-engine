@@ -37,7 +37,7 @@ function makePage(no: number, data: Uint8Array): Page {
 }
 
 export interface PagerOptions {
-  /** Maximum number of clean pages kept in memory. */
+  /** Pages kept in memory between statements (dirty and unflushed pages always stay). */
   readonly cachePages?: number;
   /** Checkpoint once the write-ahead log grows beyond this many bytes. */
   readonly checkpointBytes?: number;
@@ -153,8 +153,9 @@ export class Pager {
     const data = new Uint8Array(PAGE_SIZE);
     data.set(raw);
     const page = makePage(no, data);
+    // No eviction here: callers may still hold pages they read earlier in the
+    // statement, so the cache only shrinks between statements (see commit).
     this.cache.set(no, page);
-    this.evict();
     return page;
   }
 
@@ -252,12 +253,18 @@ export class Pager {
     return [...this.dirty].sort((a, b) => a - b);
   }
 
-  /** Make every change so far durable: one commit group in the write-ahead log. */
+  /**
+   * Make every change so far durable: one commit group in the write-ahead log.
+   * Every statement ends here, so this is also where the cache is trimmed back
+   * to its capacity.
+   */
   commit(): void {
     if (this.preImages) throw new GraniteError('internal_error', 'commit inside an atomic section');
-    if (this.dirty.size === 0) return;
-    this.flushToLog();
-    if (this.wal.size >= this.checkpointBytes) this.checkpoint();
+    if (this.dirty.size > 0) {
+      this.flushToLog();
+      if (this.wal.size >= this.checkpointBytes) this.checkpoint();
+    }
+    this.evict();
   }
 
   private flushToLog(): void {

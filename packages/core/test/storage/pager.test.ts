@@ -114,6 +114,26 @@ describe('Pager', () => {
     nos.forEach((no, i) => expect(pager.read(no).data[0]).toBe(i));
   });
 
+  it('keeps every page a statement touches, even past the cache size', () => {
+    const { fs, pager } = fresh(16);
+    const nos = Array.from({ length: 40 }, () => pager.allocate().no);
+    pager.checkpoint();
+    // More pages dirtied in one section than the cache holds: none may be dropped.
+    pager.beginAtomic();
+    const pages = nos.map((no, i) => {
+      const page = pager.write(no);
+      page.data[9] = i + 1;
+      return page;
+    });
+    // A page read earlier in the section is still the cached object.
+    expect(pager.read(nos[0]!)).toBe(pages[0]);
+    pager.endAtomic();
+    pager.commit();
+    pager.checkpoint();
+    const reopened = open(fs);
+    nos.forEach((no, i) => expect(reopened.read(no).data[9]).toBe(i + 1));
+  });
+
   it('rejects files that are not Granite databases', () => {
     const fs = new MemoryFileSystem();
     fs.open('bad').write(0, new TextEncoder().encode('SQLite format 3\0'.padEnd(PAGE_SIZE, '\0')));
