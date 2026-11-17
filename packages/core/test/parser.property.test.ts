@@ -204,15 +204,13 @@ const { expr } = fc.letrec<{ expr: Expr }>((tie) => ({
         negated,
         span: NO_SPAN,
       })),
-    fc
-      .tuple(tie('expr'), tie('expr'), fc.boolean())
-      .map(([operand, pattern, negated]): Expr => ({
-        kind: 'like',
-        operand,
-        pattern,
-        negated,
-        span: NO_SPAN,
-      })),
+    fc.tuple(tie('expr'), tie('expr'), fc.boolean()).map(([operand, pattern, negated]): Expr => ({
+      kind: 'like',
+      operand,
+      pattern,
+      negated,
+      span: NO_SPAN,
+    })),
     fc
       .tuple(
         fc.option(tie('expr'), { nil: undefined }),
