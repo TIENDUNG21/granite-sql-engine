@@ -3,10 +3,94 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Granite Studio: run SQL against the Granite engine, compiled to JavaScript and running in this browser tab."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Granite Studio</title>
   </head>
   <body>
-    <div id="app"></div>
+    <div class="app">
+      <header class="top">
+        <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+          <rect x="20" y="8" width="24" height="13" rx="2.5" fill="currentColor" />
+          <path d="M32 21 18 43M32 21l14 22" stroke="currentColor" stroke-width="3.5" fill="none" />
+          <rect
+            x="6"
+            y="43"
+            width="24"
+            height="13"
+            rx="2.5"
+            stroke="currentColor"
+            stroke-width="3.5"
+            fill="none"
+          />
+          <rect
+            x="34"
+            y="43"
+            width="24"
+            height="13"
+            rx="2.5"
+            stroke="currentColor"
+            stroke-width="3.5"
+            fill="none"
+          />
+        </svg>
+        <h1>Granite Studio</h1>
+        <p class="tagline">The Granite SQL engine, running in this tab.</p>
+        <a class="source" href="https://github.com/TIENDUNG21/granite-sql-engine">Source</a>
+      </header>
+
+      <main class="work">
+        <div class="editor" id="editor">
+          <pre id="highlight" aria-hidden="true"></pre>
+          <textarea
+            id="sql"
+            wrap="off"
+            spellcheck="false"
+            autocapitalize="off"
+            autocomplete="off"
+            aria-label="SQL"
+          ></textarea>
+        </div>
+        <div class="toolbar">
+          <button id="run" class="primary" type="button" title="Ctrl+Enter">Run</button>
+          <button id="explain" type="button" title="Plan of the last statement">Explain</button>
+          <button
+            id="analyze"
+            type="button"
+            title="Ctrl+Shift+Enter. Runs a SELECT and measures every operator"
+          >
+            Explain analyze
+          </button>
+          <span id="txn" class="badge" hidden>in transaction</span>
+          <span id="status" class="status" role="status"></span>
+        </div>
+        <div id="output" class="output" aria-live="polite"></div>
+      </main>
+
+      <aside class="side">
+        <section>
+          <h2>Examples</h2>
+          <ul id="examples" class="examples"></ul>
+        </section>
+        <section>
+          <h2>Schema</h2>
+          <div id="schema" class="schema"></div>
+          <button id="reset" type="button" class="quiet">Reset database</button>
+        </section>
+      </aside>
+
+      <footer class="foot">
+        <span
+          >In-memory database; reloading the page resets it. The sample shop is synthetic data from
+          a seeded generator.</span
+        >
+        <span id="version"></span>
+      </footer>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
