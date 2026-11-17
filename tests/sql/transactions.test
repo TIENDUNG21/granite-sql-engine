@@ -1,0 +1,287 @@
+# Snapshot isolation between two connections. Sessions take turns statement
+# by statement; a write-write conflict fails instead of waiting.
+
+statement ok
+CREATE TABLE acct (id INTEGER PRIMARY KEY, owner TEXT, balance INTEGER)
+
+statement ok
+INSERT INTO acct VALUES (1, 'An', 100), (2, 'Bình', 50)
+
+# --- no dirty reads -------------------------------------------------------
+
+connection a
+
+statement ok
+BEGIN
+
+statement ok
+UPDATE acct SET balance = balance - 30 WHERE id = 1
+
+query I
+SELECT balance FROM acct WHERE id = 1
+----
+70
+
+connection b
+
+query I
+SELECT balance FROM acct WHERE id = 1
+----
+100
+
+connection a
+
+statement ok
+COMMIT
+
+connection b
+
+query I
+SELECT balance FROM acct WHERE id = 1
+----
+70
+
+# --- repeatable reads -----------------------------------------------------
+
+connection b
+
+statement ok
+BEGIN
+
+query I
+SELECT sum(balance) FROM acct
+----
+120
+
+connection a
+
+statement ok
+INSERT INTO acct VALUES (3, 'Châu', 500)
+
+statement ok
+UPDATE acct SET balance = 0 WHERE id = 2
+
+connection b
+
+# b keeps the snapshot of its first statement: no new row, old balance.
+query ITI
+SELECT id, owner, balance FROM acct ORDER BY id
+----
+1	An	70
+2	Bình	50
+
+statement ok
+COMMIT
+
+query I
+SELECT count(*) FROM acct
+----
+3
+
+# --- rollback leaves nothing behind --------------------------------------
+
+connection a
+
+statement ok
+BEGIN
+
+statement ok
+DELETE FROM acct WHERE id = 3
+
+statement ok
+INSERT INTO acct VALUES (4, 'Dũng', 10)
+
+query I
+SELECT count(*) FROM acct
+----
+3
+
+statement ok
+ROLLBACK
+
+query IT
+SELECT id, owner FROM acct ORDER BY id
+----
+1	An
+2	Bình
+3	Châu
+
+# --- no lost updates: first updater wins ----------------------------------
+
+connection a
+
+statement ok
+BEGIN
+
+query I
+SELECT balance FROM acct WHERE id = 3
+----
+500
+
+connection b
+
+statement ok
+BEGIN
+
+query I
+SELECT balance FROM acct WHERE id = 3
+----
+500
+
+connection a
+
+statement ok
+UPDATE acct SET balance = balance + 1 WHERE id = 3
+
+connection b
+
+# a has not committed: b cannot update the same row.
+statement error could not serialize access due to a concurrent update
+UPDATE acct SET balance = balance + 1 WHERE id = 3
+
+connection a
+
+statement ok
+COMMIT
+
+connection b
+
+# a committed after b's snapshot: still a conflict.
+statement error could not serialize access due to an update committed after this transaction started
+UPDATE acct SET balance = balance + 1 WHERE id = 3
+
+# A failed statement leaves the transaction usable; b still sees its snapshot.
+query I
+SELECT balance FROM acct WHERE id = 3
+----
+500
+
+statement ok
+ROLLBACK
+
+query I
+SELECT balance FROM acct WHERE id = 3
+----
+501
+
+# --- unique keys across transactions -------------------------------------
+
+connection a
+
+statement ok
+BEGIN
+
+statement ok
+INSERT INTO acct VALUES (10, 'Giang', 1)
+
+connection b
+
+statement error could not serialize access due to a concurrent insert of the same key
+INSERT INTO acct VALUES (10, 'Hà', 2)
+
+connection a
+
+statement ok
+ROLLBACK
+
+connection b
+
+# The aborted insert no longer holds the key.
+statement ok
+INSERT INTO acct VALUES (10, 'Hà', 2)
+
+statement error duplicate key value violates unique constraint
+INSERT INTO acct VALUES (10, 'Khánh', 3)
+
+# A key deleted and re-inserted inside one transaction.
+statement ok
+BEGIN
+
+statement ok
+DELETE FROM acct WHERE id = 10
+
+statement ok
+INSERT INTO acct VALUES (10, 'Khánh', 3)
+
+statement ok
+COMMIT
+
+query T
+SELECT owner FROM acct WHERE id = 10
+----
+Khánh
+
+# --- updates that move a row through an index ----------------------------
+
+statement ok
+CREATE INDEX acct_balance ON acct (balance)
+
+connection a
+
+statement ok
+BEGIN
+
+statement ok
+UPDATE acct SET balance = 999 WHERE id = 1
+
+connection b
+
+# The old version is still found through the index by an older snapshot.
+query I
+SELECT id FROM acct WHERE balance = 70
+----
+1
+
+query I
+SELECT count(*) FROM acct WHERE balance = 999
+----
+0
+
+connection a
+
+statement ok
+COMMIT
+
+connection b
+
+query I
+SELECT id FROM acct WHERE balance = 999
+----
+1
+
+query I
+SELECT count(*) FROM acct WHERE balance = 70
+----
+0
+
+# --- transaction state errors ---------------------------------------------
+
+statement error there is no transaction in progress
+COMMIT
+
+statement ok
+BEGIN
+
+statement error a transaction is already in progress
+BEGIN
+
+statement error CREATE TABLE cannot run inside a transaction block
+CREATE TABLE nope (x INTEGER)
+
+statement error VACUUM cannot run inside a transaction block
+VACUUM
+
+connection a
+
+statement error DROP INDEX cannot run while other transactions are open
+DROP INDEX acct_balance
+
+connection b
+
+statement ok
+ROLLBACK
+
+connection a
+
+statement ok
+DROP INDEX acct_balance

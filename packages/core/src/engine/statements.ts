@@ -24,6 +24,8 @@ import { okResult, type QueryResult } from './result.ts';
 export interface Engine {
   readonly catalog: Catalog;
   readonly store: RowStore;
+  /** Remove row versions no transaction can see; returns how many were removed. */
+  vacuum(table: TableSchema): number;
 }
 
 /** Compiled form of one statement: how to run it and how to describe it. */
@@ -230,14 +232,11 @@ function executeUtility(engine: Engine, bound: BoundStatement): QueryResult {
       }
       return okResult('ANALYZE', bound.tables.length);
     }
-    case 'begin':
-    case 'commit':
-    case 'rollback':
-    case 'vacuum':
-      throw new GraniteError(
-        'feature_not_supported',
-        `${bound.kind.toUpperCase()} is not supported yet`,
-      );
+    case 'vacuum': {
+      let removed = 0;
+      for (const table of bound.tables) removed += engine.vacuum(table);
+      return okResult('VACUUM', removed);
+    }
     default:
       throw new GraniteError('internal_error', `unexpected statement ${bound.kind}`);
   }

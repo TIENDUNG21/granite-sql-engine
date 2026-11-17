@@ -3,7 +3,6 @@ import { GraniteError } from '../errors.ts';
 import { BTree } from './btree.ts';
 import type { FileSystem } from './file.ts';
 import { PAGE_SIZE, Pager } from './pager.ts';
-import { PagedRowStore } from './table-store.ts';
 import { WAL_HEADER_SIZE, Wal, type RecoveryReport } from './wal.ts';
 
 /** The catalog B+tree always lives on page 1. */
@@ -18,12 +17,11 @@ export interface StorageOptions {
 }
 
 /**
- * Owns the database file: the pager, the row store and the catalog tree that
+ * Owns the database file: the pager, the write-ahead log and the catalog tree that
  * maps table names to their JSON-encoded schemas.
  */
 export class StorageEngine {
   readonly pager: Pager;
-  readonly rows: PagedRowStore;
   /** What crash recovery found when the database was opened. */
   readonly recovery: RecoveryReport;
   private readonly catalogTree: BTree;
@@ -31,7 +29,6 @@ export class StorageEngine {
   private constructor(pager: Pager, recovery: RecoveryReport) {
     this.pager = pager;
     this.recovery = recovery;
-    this.rows = new PagedRowStore(pager);
     this.catalogTree = new BTree(pager, CATALOG_ROOT);
   }
 
