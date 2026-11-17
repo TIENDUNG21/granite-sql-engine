@@ -7,6 +7,8 @@ Granite is a relational database engine in TypeScript, built from the SQL parser
 [![CI](https://github.com/TIENDUNG21/granite-sql-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/TIENDUNG21/granite-sql-engine/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-8fb3ff.svg)](LICENSE)
 
+<p align="center"><img src="assets/banner.svg" width="100%" alt="Animated diagram: a SELECT by primary key walks the B+tree from the root to a single leaf"></p>
+
 ```text
 granite> .sample
 Created customers (1000), products (120), orders (5000) and order_items.
