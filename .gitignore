@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.cache/
+*.db
+*.db-wal
+.vite/
+.DS_Store
+Thumbs.db

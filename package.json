@@ -1,0 +1,37 @@
+{
+  "name": "granite-sql-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A relational database engine, from the parser to the pages on disk.",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/cli",
+    "apps/studio"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "build": "tsc -b packages/core packages/cli && npm run build --workspace apps/studio",
+    "typecheck": "tsc -b packages/core packages/cli && tsc -p apps/studio --noEmit",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "tsc -b --clean packages/core packages/cli"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.5",
+    "eslint": "^10.15.0",
+    "fast-check": "^4.10.2",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.1",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.73.0",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
+  }
+}

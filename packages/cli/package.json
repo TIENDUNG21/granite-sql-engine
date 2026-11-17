@@ -1,0 +1,16 @@
+{
+  "name": "@granite/cli",
+  "version": "0.1.0",
+  "description": "Interactive SQL shell for the Granite SQL Engine.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "granite": "./dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@granite/core": "0.1.0"
+  }
+}
