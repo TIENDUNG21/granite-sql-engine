@@ -6,9 +6,9 @@ exports[`plan snapshots > matches the recorded plans on the sample dataset > SEL
 `;
 
 exports[`plan snapshots > matches the recorded plans on the sample dataset > SELECT DISTINCT category FROM products WHERE price BETWEEN 10 AND 20 1`] = `
-"Distinct  (rows=13 cost=4.27)
-└─ Project products.category  (rows=13 cost=4.23)
-   └─ SeqScan products filter: (products.price >= 10) AND (products.price <= 20)  (rows=13 cost=4.2)"
+"Distinct  (rows=8 cost=4.24)
+└─ Project products.category  (rows=8 cost=4.22)
+   └─ SeqScan products filter: (products.price >= 10) AND (products.price <= 20)  (rows=8 cost=4.2)"
 `;
 
 exports[`plan snapshots > matches the recorded plans on the sample dataset > SELECT c.city, count(o.id) FROM customers c LEFT JOIN orders o ON o.customer_id = c.id GROUP BY c.city 1`] = `

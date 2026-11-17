@@ -152,7 +152,9 @@ class Planner {
     for (const index of table.indexes) {
       const match = matchIndex(index, scan, predicates);
       if (!match) continue;
-      const matchedSel = match.used.reduce((s, p) => s * this.est.selectivity(p), 1);
+      // Estimated as one conjunction, so a lower and an upper bound form one interval.
+      const used = andAll(match.used);
+      const matchedSel = used ? this.est.selectivity(used) : 1;
       const fullKeyEquality =
         index.unique &&
         match.bounds.prefix.length === index.columns.length &&
@@ -294,7 +296,8 @@ class Planner {
         rightKeys.push(sides[1]);
       } else residual.push(c);
     }
-    const selectivity = conditions.reduce((s, c) => s * this.est.selectivity(c), 1);
+    const condition = andAll(conditions);
+    const selectivity = condition ? this.est.selectivity(condition) : 1;
     let rows = left.rows * right.rows * selectivity;
     if (type === 'left') rows = Math.max(rows, left.rows);
     const schema = [...left.schema, ...right.schema];

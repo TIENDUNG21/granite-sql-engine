@@ -108,7 +108,7 @@ export class Estimator {
       case 'const':
         return e.value === true ? 1 : 0;
       case 'and':
-        return this.selectivity(e.left) * this.selectivity(e.right);
+        return this.conjunction(conjunctsOf(e));
       case 'or': {
         const a = this.selectivity(e.left);
         const b = this.selectivity(e.right);
@@ -134,6 +134,49 @@ export class Estimator {
       default:
         return DEFAULT_SELECTIVITY;
     }
+  }
+
+  /**
+   * Conjuncts are treated as independent, except that bounds on the same
+   * numeric column combine into one interval: `g >= 400 AND g <= 409` covers
+   * 1% of [min, max], not P(g >= 400) * P(g <= 409), which would be 60 times
+   * more for uniform data between 1 and 1000. PostgreSQL's
+   * clauselist_selectivity makes the same correction.
+   */
+  private conjunction(conjuncts: BoundExpr[]): number {
+    const intervals = new Map<ColumnId, { lower?: number; upper?: number }>();
+    let s = 1;
+    for (const c of conjuncts) {
+      const bound = rangeBound(c);
+      const stats = bound && this.stats(bound.id)?.stats;
+      if (!bound || typeof stats?.min !== 'number' || typeof stats.max !== 'number') {
+        s *= this.selectivity(c);
+        continue;
+      }
+      const interval = intervals.get(bound.id) ?? {};
+      if (bound.lower) interval.lower = Math.max(interval.lower ?? -Infinity, bound.value);
+      else interval.upper = Math.min(interval.upper ?? Infinity, bound.value);
+      intervals.set(bound.id, interval);
+    }
+    for (const [id, { lower, upper }] of intervals) {
+      const stats = this.stats(id)!.stats!;
+      const min = stats.min as number;
+      const max = stats.max as number;
+      const below = (v: number | undefined, fallback: number): number =>
+        v === undefined
+          ? fallback
+          : max <= min
+            ? v >= min
+              ? 1
+              : 0
+            : clamp((v - min) / (max - min));
+      let fraction = below(upper, 1) - below(lower, 0);
+      // A closed interval holds at least one value's worth of rows (BETWEEN 5 AND 5).
+      if (lower !== undefined && upper !== undefined)
+        fraction = Math.max(fraction, 1 / this.distinct(id));
+      s *= clamp(fraction) * (1 - stats.nullFraction);
+    }
+    return s;
   }
 
   private nullFraction(id: ColumnId): number {
@@ -183,6 +226,21 @@ export class Estimator {
     const fraction = op === '<' || op === '<=' ? below : 1 - below;
     return clamp(fraction) * (1 - stats.nullFraction);
   }
+}
+
+function conjunctsOf(e: BoundExpr): BoundExpr[] {
+  return e.kind === 'and' ? [...conjunctsOf(e.left), ...conjunctsOf(e.right)] : [e];
+}
+
+/** `column < | <= | > | >= number` (either way round) as a bound on the column. */
+function rangeBound(e: BoundExpr): { id: ColumnId; lower: boolean; value: number } | undefined {
+  if (e.kind !== 'compare' || !['<', '<=', '>', '>='].includes(e.op)) return undefined;
+  const [column, other, op] =
+    e.left.kind === 'column' ? [e.left, e.right, e.op] : [e.right, e.left, flip(e.op)];
+  if (column.kind !== 'column' || other.kind !== 'const' || typeof other.value !== 'number') {
+    return undefined;
+  }
+  return { id: column.id, lower: op === '>' || op === '>=', value: other.value };
 }
 
 function flip(op: string): string {

@@ -41,6 +41,27 @@ describe('optimizer', () => {
     );
   });
 
+  it('estimates a two-sided range as one interval, wherever it lies', () => {
+    const uniform = Database.open();
+    uniform.execute(
+      'CREATE TABLE u (id INTEGER PRIMARY KEY, g INTEGER); CREATE INDEX u_g ON u (g)',
+    );
+    const rows = Array.from({ length: 5000 }, (_, i) => `(${i}, ${1 + (i % 1000)})`);
+    uniform.execute(`INSERT INTO u VALUES ${rows.join(', ')}`);
+    uniform.execute('ANALYZE');
+    for (const low of [1, 400, 900]) {
+      const sql = `SELECT * FROM u WHERE g BETWEEN ${low} AND ${low + 9}`;
+      const scan = uniform.query(`EXPLAIN ${sql}`).plan!.children[0]!;
+      expect(scan.op).toBe('IndexScan');
+      // 50 rows qualify; independent bounds would estimate up to ~1,250.
+      expect(scan.rows).toBeGreaterThanOrEqual(25);
+      expect(scan.rows).toBeLessThanOrEqual(100);
+    }
+    // An empty interval still estimates at least one row.
+    const empty = uniform.query('EXPLAIN SELECT * FROM u WHERE g > 500 AND g < 400').plan!;
+    expect(empty.children[0]!.rows).toBeGreaterThanOrEqual(1);
+  });
+
   it('prefers a sequential scan when most rows qualify', () => {
     expect(plan('SELECT * FROM orders WHERE id > 1').at(-1)).toBe(
       '  SeqScan orders filter: orders.id > 1',
