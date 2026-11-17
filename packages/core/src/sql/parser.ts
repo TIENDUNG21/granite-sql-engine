@@ -194,6 +194,9 @@ class Parser {
           }
           return { kind: 'explain', analyze, statement, span: this.spanFrom(tok.start) };
         }
+        case 'CHECKPOINT':
+          this.next();
+          return { kind: 'checkpoint', span: this.spanFrom(tok.start) };
         case 'ANALYZE':
         case 'VACUUM': {
           this.next();

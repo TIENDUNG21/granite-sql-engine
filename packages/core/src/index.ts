@@ -22,3 +22,4 @@ export {
   sampleSizes,
   type SampleOptions,
 } from './sample/dataset.ts';
+export type { RecoveryReport } from './storage/wal.ts';

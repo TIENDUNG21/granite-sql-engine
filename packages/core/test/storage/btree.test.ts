@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BTree, MAX_KEY_SIZE, compareBytes } from '../../src/storage/btree.ts';
 import { MemoryFileSystem } from '../../src/storage/file.ts';
 import { PAGE_SIZE, Pager } from '../../src/storage/pager.ts';
+import { Wal } from '../../src/storage/wal.ts';
 import {
   INTERNAL,
   LEAF,
@@ -16,7 +17,8 @@ import {
 } from '../../src/storage/slotted.ts';
 
 function newPager(): Pager {
-  const pager = Pager.open(new MemoryFileSystem().open('db'), { cachePages: 64 });
+  const fs = new MemoryFileSystem();
+  const pager = Pager.open(fs.open('db'), Wal.open(fs.open('db-wal')), { cachePages: 64 });
   pager.commit();
   return pager;
 }

@@ -5,8 +5,9 @@ import type { RowStore } from '../exec/row-source.ts';
 import { parse } from '../sql/parser.ts';
 import { StorageEngine } from '../storage/engine.ts';
 import { MemoryFileSystem, type FileSystem } from '../storage/file.ts';
+import type { RecoveryReport } from '../storage/wal.ts';
 import type { Value } from '../types/datatype.ts';
-import type { QueryResult } from './result.ts';
+import { okResult, type QueryResult } from './result.ts';
 import { executeStatement, type Engine } from './statements.ts';
 
 export interface DatabaseOptions {
@@ -16,6 +17,8 @@ export interface DatabaseOptions {
   readonly path?: string;
   /** Clean pages kept in the buffer cache (default 2048 = 8 MiB). */
   readonly cachePages?: number;
+  /** Checkpoint when the write-ahead log exceeds this size (default 4 MiB). */
+  readonly checkpointBytes?: number;
 }
 
 /** An embedded database. Each Session is one connection to it. */
@@ -66,6 +69,15 @@ export class Database implements Engine {
     return this.catalog.tables();
   }
 
+  /** What crash recovery replayed when this database was opened. */
+  get recovery(): RecoveryReport {
+    return this.storage.recovery;
+  }
+
+  checkpoint(): void {
+    this.storage.pager.checkpoint();
+  }
+
   /** Run one statement atomically; on failure every change it made is undone. */
   runAtomic<T>(fn: () => T): T {
     try {
@@ -104,6 +116,12 @@ export class Session {
     const results: QueryResult[] = [];
     for (const stmt of statements) {
       try {
+        if (stmt.kind === 'checkpoint') {
+          // Not a data change: it must run outside the statement's atomic section.
+          this.db.checkpoint();
+          results.push(okResult('CHECKPOINT'));
+          continue;
+        }
         results.push(this.db.runAtomic(() => executeStatement(this.db, stmt, params, sql)));
       } catch (err) {
         if (err instanceof GraniteError) {

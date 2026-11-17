@@ -35,6 +35,7 @@ export const KEYWORDS: ReadonlySet<string> = new Set([
   'BY',
   'CASE',
   'CAST',
+  'CHECKPOINT',
   'COMMIT',
   'CREATE',
   'CROSS',

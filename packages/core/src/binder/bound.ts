@@ -143,7 +143,7 @@ export type BoundStatement =
       exists: boolean;
     }
   | { kind: 'drop_index'; table: TableSchema | undefined; index: IndexSchema | undefined }
-  | { kind: 'begin' | 'commit' | 'rollback' }
+  | { kind: 'begin' | 'commit' | 'rollback' | 'checkpoint' }
   | { kind: 'analyze'; tables: TableSchema[] }
   | { kind: 'vacuum'; tables: TableSchema[] };
 

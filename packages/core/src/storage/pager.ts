@@ -1,5 +1,6 @@
 import { GraniteError } from '../errors.ts';
 import type { BlockFile } from './file.ts';
+import type { Wal } from './wal.ts';
 
 export const PAGE_SIZE = 4096;
 
@@ -38,11 +39,17 @@ function makePage(no: number, data: Uint8Array): Page {
 export interface PagerOptions {
   /** Maximum number of clean pages kept in memory. */
   readonly cachePages?: number;
+  /** Checkpoint once the write-ahead log grows beyond this many bytes. */
+  readonly checkpointBytes?: number;
 }
 
 /**
  * The pager hands out fixed-size pages, caches them, tracks which ones changed
  * and decides when they reach the file. Higher layers never touch the file.
+ *
+ * Durability follows the write-ahead rule: a commit appends the images of the
+ * changed pages to the log and fsyncs it; the data file is only updated by a
+ * checkpoint, after which the log is emptied.
  *
  * A statement runs inside an atomic section: the first time it modifies a page
  * the pager keeps the page's previous bytes, so a failed statement can be
@@ -53,18 +60,26 @@ export class Pager {
   private readonly cache = new Map<number, Page>();
   /** Pages modified since the last commit. */
   private readonly dirty = new Set<number>();
+  /** Pages committed to the log but not yet written to the data file. */
+  private readonly unflushed = new Set<number>();
   private preImages: Map<number, { data: Uint8Array | undefined; wasDirty: boolean }> | undefined;
   private readonly capacity: number;
+  private readonly checkpointBytes: number;
   readonly file: BlockFile;
+  readonly wal: Wal;
+  /** Number of checkpoints since the pager was opened. */
+  checkpoints = 0;
 
-  private constructor(file: BlockFile, options: PagerOptions) {
+  private constructor(file: BlockFile, wal: Wal, options: PagerOptions) {
     this.file = file;
+    this.wal = wal;
     this.capacity = Math.max(16, options.cachePages ?? 2048);
+    this.checkpointBytes = options.checkpointBytes ?? 4 * 1024 * 1024;
   }
 
-  /** Open a database file, formatting it if it is empty. */
-  static open(file: BlockFile, options: PagerOptions = {}): Pager {
-    const pager = new Pager(file, options);
+  /** Open a database file, formatting it if it is empty. Recovery must already have run. */
+  static open(file: BlockFile, wal: Wal, options: PagerOptions = {}): Pager {
+    const pager = new Pager(file, wal, options);
     if (file.size() === 0) pager.format();
     else pager.validate();
     return pager;
@@ -193,7 +208,7 @@ export class Pager {
     if (this.cache.size <= this.capacity) return;
     for (const no of this.cache.keys()) {
       if (this.cache.size <= this.capacity) break;
-      if (no === 0 || this.dirty.has(no)) continue;
+      if (no === 0 || this.dirty.has(no) || this.unflushed.has(no)) continue;
       this.cache.delete(no);
     }
   }
@@ -237,20 +252,45 @@ export class Pager {
     return [...this.dirty].sort((a, b) => a - b);
   }
 
-  /** Write every dirty page to the file and fsync it. */
+  /** Make every change so far durable: one commit group in the write-ahead log. */
   commit(): void {
     if (this.preImages) throw new GraniteError('internal_error', 'commit inside an atomic section');
     if (this.dirty.size === 0) return;
-    for (const no of this.dirtyPages()) {
+    this.flushToLog();
+    if (this.wal.size >= this.checkpointBytes) this.checkpoint();
+  }
+
+  private flushToLog(): void {
+    if (this.dirty.size === 0) return;
+    const pages = this.dirtyPages().map((no) => ({ no, data: this.cache.get(no)!.data }));
+    this.wal.appendGroup(pages);
+    for (const no of this.dirty) this.unflushed.add(no);
+    this.dirty.clear();
+  }
+
+  /**
+   * Copy every logged page to the data file, fsync it, then empty the log.
+   * A crash at any point leaves either the old log (replayed again, which is
+   * harmless because page images are idempotent) or a synced data file.
+   */
+  checkpoint(): void {
+    if (this.preImages)
+      throw new GraniteError('internal_error', 'checkpoint inside an atomic section');
+    this.flushToLog();
+    if (this.unflushed.size === 0) return;
+    for (const no of [...this.unflushed].sort((a, b) => a - b)) {
       this.file.write(no * PAGE_SIZE, this.cache.get(no)!.data);
     }
     this.file.sync();
-    this.dirty.clear();
+    this.wal.reset();
+    this.unflushed.clear();
+    this.checkpoints++;
     this.evict();
   }
 
   close(): void {
-    this.commit();
+    this.checkpoint();
     this.file.close();
+    this.wal.close();
   }
 }

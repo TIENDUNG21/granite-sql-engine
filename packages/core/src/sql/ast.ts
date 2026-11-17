@@ -155,6 +155,11 @@ export interface TransactionStmt {
   span: Span;
 }
 
+export interface CheckpointStmt {
+  kind: 'checkpoint';
+  span: Span;
+}
+
 export interface ExplainStmt {
   kind: 'explain';
   analyze: boolean;
@@ -184,6 +189,7 @@ export type Statement =
   | UpdateStmt
   | DeleteStmt
   | TransactionStmt
+  | CheckpointStmt
   | ExplainStmt
   | AnalyzeStmt
   | VacuumStmt;

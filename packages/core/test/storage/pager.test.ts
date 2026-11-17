@@ -2,15 +2,32 @@ import { describe, expect, it } from 'vitest';
 import { GraniteError } from '../../src/errors.ts';
 import { MemoryFileSystem } from '../../src/storage/file.ts';
 import { HEADER, PAGE_SIZE, Pager } from '../../src/storage/pager.ts';
+import { Wal } from '../../src/storage/wal.ts';
+
+function open(fs: MemoryFileSystem, name = 'db', cachePages?: number): Pager {
+  return Pager.open(fs.open(name), Wal.open(fs.open(`${name}-wal`)), { cachePages });
+}
 
 function fresh(cachePages?: number): { fs: MemoryFileSystem; pager: Pager } {
   const fs = new MemoryFileSystem();
-  const pager = Pager.open(fs.open('db'), { cachePages });
-  pager.commit();
+  const pager = open(fs, 'db', cachePages);
+  pager.checkpoint();
   return { fs, pager };
 }
 
 describe('Pager', () => {
+  it('logs commits to the WAL and only writes the data file at checkpoints', () => {
+    const { fs, pager } = fresh();
+    pager.allocate().data[7] = 7;
+    pager.commit();
+    expect(fs.contents('db').length).toBe(PAGE_SIZE);
+    expect(pager.wal.size).toBeGreaterThan(2 * PAGE_SIZE);
+    pager.checkpoint();
+    expect(fs.contents('db').length).toBe(2 * PAGE_SIZE);
+    expect(fs.contents('db')[PAGE_SIZE + 7]).toBe(7);
+    expect(pager.wal.size).toBe(16);
+  });
+
   it('formats an empty file with a header page', () => {
     const { fs, pager } = fresh();
     expect(pager.pageCount).toBe(1);
@@ -24,8 +41,8 @@ describe('Pager', () => {
     const p = pager.allocate();
     expect(p.no).toBe(1);
     p.data[100] = 42;
-    pager.commit();
-    const reopened = Pager.open(fs.open('db'));
+    pager.checkpoint();
+    const reopened = open(fs);
     expect(reopened.pageCount).toBe(2);
     expect(reopened.read(1).data[100]).toBe(42);
   });
@@ -92,7 +109,7 @@ describe('Pager', () => {
       p.data[0] = i;
       nos.push(p.no);
     }
-    pager.commit();
+    pager.checkpoint();
     for (const no of nos) pager.read(no);
     nos.forEach((no, i) => expect(pager.read(no).data[0]).toBe(i));
   });
@@ -100,17 +117,15 @@ describe('Pager', () => {
   it('rejects files that are not Granite databases', () => {
     const fs = new MemoryFileSystem();
     fs.open('bad').write(0, new TextEncoder().encode('SQLite format 3\0'.padEnd(PAGE_SIZE, '\0')));
-    expect(() => Pager.open(fs.open('bad'))).toThrow(
-      'not a Granite database file: bad magic number',
-    );
+    expect(() => open(fs, 'bad')).toThrow('not a Granite database file: bad magic number');
     fs.open('short').write(0, new Uint8Array(10));
-    expect(() => Pager.open(fs.open('short'))).toThrow('shorter than one page');
+    expect(() => open(fs, 'short')).toThrow('shorter than one page');
   });
 
   it('rejects a header that claims more pages than the file has', () => {
     const { fs, pager } = fresh();
     pager.setHeaderU32(HEADER.pageCount, 50);
-    pager.commit();
-    expect(() => Pager.open(fs.open('db'))).toThrow('header says 50 pages');
+    pager.checkpoint();
+    expect(() => open(fs)).toThrow('header says 50 pages');
   });
 });

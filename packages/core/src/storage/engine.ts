@@ -2,8 +2,9 @@ import type { TableSchema } from '../catalog/schema.ts';
 import { GraniteError } from '../errors.ts';
 import { BTree } from './btree.ts';
 import type { FileSystem } from './file.ts';
-import { Pager } from './pager.ts';
+import { PAGE_SIZE, Pager } from './pager.ts';
 import { PagedRowStore } from './table-store.ts';
+import { WAL_HEADER_SIZE, Wal, type RecoveryReport } from './wal.ts';
 
 /** The catalog B+tree always lives on page 1. */
 export const CATALOG_ROOT = 1;
@@ -13,6 +14,7 @@ const decoder = new TextDecoder();
 
 export interface StorageOptions {
   readonly cachePages?: number;
+  readonly checkpointBytes?: number;
 }
 
 /**
@@ -22,23 +24,37 @@ export interface StorageOptions {
 export class StorageEngine {
   readonly pager: Pager;
   readonly rows: PagedRowStore;
+  /** What crash recovery found when the database was opened. */
+  readonly recovery: RecoveryReport;
   private readonly catalogTree: BTree;
 
-  private constructor(pager: Pager) {
+  private constructor(pager: Pager, recovery: RecoveryReport) {
     this.pager = pager;
+    this.recovery = recovery;
     this.rows = new PagedRowStore(pager);
     this.catalogTree = new BTree(pager, CATALOG_ROOT);
   }
 
+  /**
+   * Open (or create) a database: replay the write-ahead log into the data file,
+   * then start the pager on the recovered file.
+   */
   static open(fs: FileSystem, path: string, options: StorageOptions = {}): StorageEngine {
-    const pager = Pager.open(fs.open(path), { cachePages: options.cachePages });
+    const data = fs.open(path);
+    const wal = Wal.open(fs.open(`${path}-wal`), { newDatabase: data.size() === 0 });
+    const recovery = wal.recover((page, image) => data.write(page * PAGE_SIZE, image));
+    if (recovery.groups > 0) data.sync();
+    if (wal.size > WAL_HEADER_SIZE) wal.reset();
+    const pager = Pager.open(data, wal, options);
     if (pager.pageCount === 1) {
       const root = BTree.create(pager);
       if (root !== CATALOG_ROOT)
         throw new GraniteError('internal_error', 'catalog root must be page 1');
+      // Commit through the log first, so a crash while formatting is recoverable.
       pager.commit();
+      pager.checkpoint();
     }
-    return new StorageEngine(pager);
+    return new StorageEngine(pager, recovery);
   }
 
   loadCatalog(): TableSchema[] {

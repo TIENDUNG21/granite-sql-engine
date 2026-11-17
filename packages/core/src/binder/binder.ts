@@ -117,6 +117,7 @@ class Binder {
       case 'begin':
       case 'commit':
       case 'rollback':
+      case 'checkpoint':
         return { kind: stmt.kind };
       case 'analyze':
       case 'vacuum':
