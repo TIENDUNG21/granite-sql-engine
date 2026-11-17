@@ -37,6 +37,7 @@ export type PhysicalPlan = Base &
         withRowId: boolean;
       }
     | { op: 'Values' }
+    | { op: 'Empty'; reason: string }
     | { op: 'Filter'; input: PhysicalPlan; predicate: BoundExpr }
     | { op: 'Project'; input: PhysicalPlan; outputs: OutputColumn[] }
     | {
@@ -73,6 +74,7 @@ export function childrenOfPlan(plan: PhysicalPlan): PhysicalPlan[] {
     case 'SeqScan':
     case 'IndexScan':
     case 'Values':
+    case 'Empty':
       return [];
     case 'NestedLoopJoin':
     case 'HashJoin':
@@ -117,6 +119,8 @@ export function describePlan(plan: PhysicalPlan): string {
     }
     case 'Values':
       return 'one row';
+    case 'Empty':
+      return plan.reason;
     case 'Filter':
       return exprToString(plan.predicate);
     case 'Project':

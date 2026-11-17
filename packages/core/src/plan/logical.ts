@@ -27,6 +27,8 @@ export type LogicalPlan =
       withRowId: boolean;
     }
   | { kind: 'values' }
+  /** A subtree proven to return no rows (e.g. WHERE 1 = 0). */
+  | { kind: 'empty'; schema: ColumnInfo[]; reason: string }
   | { kind: 'filter'; input: LogicalPlan; predicates: BoundExpr[] }
   | {
       kind: 'join';
@@ -55,6 +57,8 @@ export function schemaOf(plan: LogicalPlan): ColumnInfo[] {
         : plan.relation.columns;
     case 'values':
       return [];
+    case 'empty':
+      return plan.schema;
     case 'filter':
     case 'distinct':
     case 'sort':

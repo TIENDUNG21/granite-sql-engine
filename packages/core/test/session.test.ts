@@ -114,7 +114,12 @@ describe('EXPLAIN', () => {
     const scan = (function find(n: NonNullable<typeof r.plan>): NonNullable<typeof r.plan> {
       return n.children.length ? find(n.children[0]!) : n;
     })(r.plan!);
-    expect(scan.actualRows).toBe(3);
+    // The WHERE clause is pushed into the scan, which therefore emits 2 rows.
+    expect(scan).toMatchObject({
+      op: 'SeqScan',
+      detail: 'products filter: products.stock > 0',
+      actualRows: 2,
+    });
     expect(r.plan!.actualRows).toBe(2);
   });
 

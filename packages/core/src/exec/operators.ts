@@ -57,6 +57,8 @@ function build(plan: PhysicalPlan, ctx: ExecContext): Operator {
     }
     case 'Values':
       return new ValuesOp();
+    case 'Empty':
+      return new EmptyOp();
     case 'Filter': {
       const input = plan.input;
       return new FilterOp(
@@ -224,6 +226,14 @@ class ScanOp implements Operator {
     this.iter?.return?.();
     this.iter = undefined;
   }
+}
+
+class EmptyOp implements Operator {
+  open(): void {}
+  next(): Row | undefined {
+    return undefined;
+  }
+  close(): void {}
 }
 
 class ValuesOp implements Operator {

@@ -1,7 +1,7 @@
 import type { BoundSelect, BoundStatement } from '../binder/bound.ts';
 import { bindStatement } from '../binder/binder.ts';
 import type { Catalog } from '../catalog/catalog.ts';
-import type { TableSchema } from '../catalog/schema.ts';
+import type { TableSchema, TableStats } from '../catalog/schema.ts';
 import { GraniteError } from '../errors.ts';
 import {
   EMPTY_LAYOUT,
@@ -14,10 +14,10 @@ import { buildOperator, collect, tooManyRows, type ExecContext } from '../exec/o
 import type { RowStore } from '../exec/row-source.ts';
 import { selectToPlan, targetRowsPlan, type LogicalPlan } from '../plan/logical.ts';
 import { planToInfo, planToText, type PhysicalPlan, type PlanNodeInfo } from '../plan/physical.ts';
-import { toPhysical } from '../plan/planner.ts';
+import { planQuery } from '../plan/planner.ts';
 import type { Statement } from '../sql/ast.ts';
 import type { Value } from '../types/datatype.ts';
-import { hashKey1 } from '../types/value.ts';
+import { compareValues, hashKey1 } from '../types/value.ts';
 import { okResult, type QueryResult } from './result.ts';
 
 /** The pieces of a database a statement runs against. */
@@ -58,7 +58,7 @@ function context(engine: Engine, bound: BoundStatement, stats?: ExecContext['sta
 }
 
 function planLogical(engine: Engine, plan: LogicalPlan): PhysicalPlan {
-  return toPhysical(plan, { rowCount: (t) => engine.store.rowCount(t) });
+  return planQuery(plan, { rowCount: (t) => engine.store.rowCount(t) });
 }
 
 function planSelect(engine: Engine, q: BoundSelect): PhysicalPlan {
@@ -224,10 +224,15 @@ function executeUtility(engine: Engine, bound: BoundStatement): QueryResult {
       });
       return okResult('DROP INDEX');
     }
+    case 'analyze': {
+      for (const table of bound.tables) {
+        catalog.putTable({ ...table, stats: computeStats(store, table) });
+      }
+      return okResult('ANALYZE', bound.tables.length);
+    }
     case 'begin':
     case 'commit':
     case 'rollback':
-    case 'analyze':
     case 'vacuum':
       throw new GraniteError(
         'feature_not_supported',
@@ -236,6 +241,36 @@ function executeUtility(engine: Engine, bound: BoundStatement): QueryResult {
     default:
       throw new GraniteError('internal_error', `unexpected statement ${bound.kind}`);
   }
+}
+
+/** Exact statistics from a full scan: row count, distinct values, NULL fraction, min and max. */
+export function computeStats(store: RowStore, table: TableSchema): TableStats {
+  const distinct = table.columns.map(() => new Set<string>());
+  const nulls = table.columns.map(() => 0);
+  const min: Value[] = table.columns.map(() => null);
+  const max: Value[] = table.columns.map(() => null);
+  let rows = 0;
+  for (const { values } of store.scan(table)) {
+    rows++;
+    values.forEach((v, i) => {
+      if (v === null) {
+        nulls[i]!++;
+        return;
+      }
+      distinct[i]!.add(hashKey1(v));
+      if (min[i] === null || compareValues(v, min[i]!) < 0) min[i] = v;
+      if (max[i] === null || compareValues(v, max[i]!) > 0) max[i] = v;
+    });
+  }
+  return {
+    rowCount: rows,
+    columns: table.columns.map((_, i) => ({
+      distinct: distinct[i]!.size,
+      nullFraction: rows === 0 ? 0 : nulls[i]! / rows,
+      min: min[i]!,
+      max: max[i]!,
+    })),
+  };
 }
 
 /** Enforce column constraints on a row about to be written; TEXT is stored as NFC. */
