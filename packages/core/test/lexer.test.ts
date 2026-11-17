@@ -53,7 +53,7 @@ describe('tokenize', () => {
   });
 
   it('normalizes string literals to NFC', () => {
-    const nfd = "'Việt'";
+    const nfd = "'Vie\u0302\u0323t'";
     const nfc = "'Việt'";
     expect(tokenize(nfd)[0]!.value).toBe(tokenize(nfc)[0]!.value);
     expect(tokenize(nfd)[0]!.value).toBe('Việt');

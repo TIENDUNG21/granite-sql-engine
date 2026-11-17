@@ -114,7 +114,7 @@ describe('parameters', () => {
   });
 
   it('normalizes text parameters to NFC', () => {
-    const q = bindSelect('SELECT $1 FROM customers', ['Việt']);
+    const q = bindSelect('SELECT $1 FROM customers', ['Vie\u0302\u0323t']);
     expect(q.outputs[0]!.expr).toMatchObject({ kind: 'const', value: 'Việt' });
   });
 
