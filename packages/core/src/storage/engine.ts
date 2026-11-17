@@ -78,10 +78,12 @@ export class StorageEngine {
   }
 
   /**
-   * Run `fn` as one atomic unit: either all of its page changes are kept and
-   * committed, or none are.
+   * Run `fn` as one atomic unit: either all of its page changes are kept or
+   * none are. With `durable` (the default) the kept changes are committed to
+   * the log before returning; otherwise they stay dirty in the cache until the
+   * next durable commit.
    */
-  atomic<T>(fn: () => T): T {
+  atomic<T>(fn: () => T, durable = true): T {
     this.pager.beginAtomic();
     let result: T;
     try {
@@ -91,7 +93,8 @@ export class StorageEngine {
       throw err;
     }
     this.pager.endAtomic();
-    this.pager.commit();
+    if (durable) this.pager.commit();
+    else this.pager.trim();
     return result;
   }
 

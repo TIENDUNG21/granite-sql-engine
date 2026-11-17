@@ -122,11 +122,13 @@ export class Database implements Engine {
     try {
       // Snapshot isolation: an explicit transaction keeps the snapshot of its first statement.
       this.txns.ensureSnapshot(t);
+      // Inside BEGIN ... COMMIT nothing needs to be durable before COMMIT, so the
+      // pages a statement changed are logged (once) by the next commit of any session.
       return this.storage.atomic(() => {
         const result = fn();
         if (!t.explicit) this.txns.commit(t);
         return result;
-      });
+      }, !t.explicit);
     } catch (err) {
       this.catalog.load(this.storage.loadCatalog());
       this.txns.forgetStatementXid(t);

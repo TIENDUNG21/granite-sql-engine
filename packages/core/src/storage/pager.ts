@@ -210,6 +210,11 @@ export class Pager {
     return this.headerU32(HEADER.freeCount);
   }
 
+  /** End a statement without committing: only shrink the cache. */
+  trim(): void {
+    this.evict();
+  }
+
   /**
    * Drop the least recently used clean pages once the cache is over capacity,
    * down to 90% of it so that the sort is paid for rarely. Dirty pages and pages

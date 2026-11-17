@@ -6,11 +6,12 @@ describe('transactions', () => {
   it('rolls back uncommitted work when the process dies', () => {
     const fs = new MemoryFileSystem();
     const db = Database.open({ fs });
-    db.execute('CREATE TABLE t (a INTEGER PRIMARY KEY)');
+    db.execute('CREATE TABLE t (a INTEGER PRIMARY KEY); CREATE TABLE other (x INTEGER)');
     db.execute('INSERT INTO t VALUES (1)');
     const s = db.session();
     s.execute('BEGIN; INSERT INTO t VALUES (2); UPDATE t SET a = 10 WHERE a = 1');
-    // Each statement reached the log, but the transaction never committed.
+    // Another session's commit logs every dirty page, including the open transaction's.
+    db.execute('INSERT INTO other VALUES (1)');
     fs.crash();
     const again = Database.open({ fs });
     expect(again.abortedOnOpen).toBe(1);
@@ -21,6 +22,22 @@ describe('transactions', () => {
     const third = Database.open({ fs });
     expect(third.abortedOnOpen).toBe(0);
     expect(third.query('SELECT a FROM t ORDER BY a').rows).toEqual([[1], [2]]);
+  });
+
+  it('logs nothing for an open transaction until something commits', () => {
+    const fs = new MemoryFileSystem();
+    const db = Database.open({ fs });
+    db.execute('CREATE TABLE t (a INTEGER)');
+    const logged = fs.contents('granite.db-wal').length;
+    const s = db.session();
+    s.execute('BEGIN; INSERT INTO t VALUES (1); INSERT INTO t VALUES (2)');
+    expect(fs.contents('granite.db-wal').length).toBe(logged);
+    s.execute('COMMIT');
+    expect(fs.contents('granite.db-wal').length).toBeGreaterThan(logged);
+    fs.crash();
+    const again = Database.open({ fs });
+    expect(again.abortedOnOpen).toBe(0);
+    expect(again.query('SELECT sum(a) FROM t').rows).toEqual([[3]]);
   });
 
   it('keeps a committed transaction across a crash', () => {
