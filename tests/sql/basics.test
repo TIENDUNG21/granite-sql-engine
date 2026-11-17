@@ -133,3 +133,14 @@ SELECT id, label FROM kept WHERE label = 'hai'
 
 statement error duplicate key value violates unique constraint "kept_pkey"
 INSERT INTO kept VALUES (3, 'again')
+
+# Committed statements survive a crash without a clean close.
+statement ok
+INSERT INTO kept VALUES (4, 'bốn')
+
+crash
+
+query IT
+SELECT id, label FROM kept ORDER BY id DESC LIMIT 1
+----
+4	bốn

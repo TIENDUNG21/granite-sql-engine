@@ -28,7 +28,10 @@ function target(): SltTarget {
       sessions = new Map();
     },
     crash() {
-      throw new Error('crash needs persistent storage');
+      // Power loss: unsynced bytes are gone and the database is not closed.
+      fs.crash();
+      db = Database.open({ fs });
+      sessions = new Map();
     },
   };
 }
