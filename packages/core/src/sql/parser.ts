@@ -47,11 +47,13 @@ export function parseExpression(source: string): Expr {
 
 const COMPARISON: ReadonlySet<string> = new Set(['=', '<>', '<', '<=', '>', '>=']);
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+const MAX_DEPTH = 200;
 
 class Parser {
   private readonly tokens: Token[];
   private pos = 0;
   private paramCounter = 0;
+  private depth = 0;
 
   private readonly source: string;
 
@@ -565,7 +567,23 @@ class Parser {
   // ------------------------------------------------------------ expressions
 
   parseExpr(): Expr {
-    return this.parseOr();
+    this.enter();
+    try {
+      return this.parseOr();
+    } finally {
+      this.depth--;
+    }
+  }
+
+  /** Guard against stack exhaustion on hostile input such as 100k nested parentheses. */
+  private enter(): void {
+    if (++this.depth > MAX_DEPTH) {
+      const tok = this.peek();
+      throw new GraniteError('program_limit_exceeded', 'expression is nested too deeply', {
+        span: { start: tok.start, end: tok.end },
+        hint: `the limit is ${MAX_DEPTH} levels`,
+      }).locate(this.source);
+    }
   }
 
   private binary(op: BinaryOp, left: Expr, right: Expr): Expr {
@@ -593,7 +611,9 @@ class Parser {
   private parseNot(): Expr {
     const start = this.peek().start;
     if (this.acceptWord('NOT')) {
+      this.enter();
       const operand = this.parseNot();
+      this.depth--;
       return { kind: 'unary', op: 'NOT', operand, span: this.spanFrom(start) };
     }
     return this.parseComparison();
@@ -682,11 +702,15 @@ class Parser {
   private parseUnary(): Expr {
     const start = this.peek().start;
     if (this.acceptSymbol('-')) {
+      this.enter();
       const operand = this.parseUnary();
+      this.depth--;
       return { kind: 'unary', op: '-', operand, span: this.spanFrom(start) };
     }
     if (this.acceptSymbol('+')) {
+      this.enter();
       const operand = this.parseUnary();
+      this.depth--;
       return { kind: 'unary', op: '+', operand, span: this.spanFrom(start) };
     }
     return this.parsePrimary();
