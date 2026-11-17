@@ -15,3 +15,10 @@ export { parse } from './sql/parser.ts';
 export type { PlanNodeInfo } from './plan/physical.ts';
 export type { ColumnSchema, IndexSchema, TableSchema, TableStats } from './catalog/schema.ts';
 export { describeTable } from './catalog/schema.ts';
+export {
+  SAMPLE_SCHEMA,
+  prng,
+  sampleDatasetSql,
+  sampleSizes,
+  type SampleOptions,
+} from './sample/dataset.ts';

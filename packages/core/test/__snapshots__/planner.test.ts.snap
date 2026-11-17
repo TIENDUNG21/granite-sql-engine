@@ -1,0 +1,57 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`plan snapshots > matches the recorded plans on the sample dataset > SELECT * FROM customers WHERE id = 42 1`] = `
+"Project customers.id, customers.name, customers.city, customers.joined, customers.vip  (rows=1 cost=2.22)
+└─ IndexScan customers using customers_pkey (id = 42)  (rows=1 cost=2.21)"
+`;
+
+exports[`plan snapshots > matches the recorded plans on the sample dataset > SELECT DISTINCT category FROM products WHERE price BETWEEN 10 AND 20 1`] = `
+"Distinct  (rows=13 cost=4.27)
+└─ Project products.category  (rows=13 cost=4.23)
+   └─ SeqScan products filter: (products.price >= 10) AND (products.price <= 20)  (rows=13 cost=4.2)"
+`;
+
+exports[`plan snapshots > matches the recorded plans on the sample dataset > SELECT c.city, count(o.id) FROM customers c LEFT JOIN orders o ON o.customer_id = c.id GROUP BY c.city 1`] = `
+"Project city, count(o.id)  (rows=10 cost=66.55)
+└─ HashAggregate group by c.city; count(o.id)  (rows=10 cost=66.5)
+   └─ HashJoin LEFT on c.id = o.customer_id  (rows=1000 cost=59)
+      ├─ SeqScan customers c  (rows=200 cost=6)
+      └─ SeqScan orders o  (rows=1000 cost=30)"
+`;
+
+exports[`plan snapshots > matches the recorded plans on the sample dataset > SELECT c.name, sum(oi.quantity * oi.unit_price) AS spent FROM customers c JOIN orders o ON o.customer_id = c.id JOIN order_items oi ON oi.order_id = o.id WHERE o.status = 'delivered' GROUP BY c.name HAVING sum(oi.quantity) > 3 ORDER BY spent DESC LIMIT 10 1`] = `
+"Limit limit 10  (rows=10 cost=140.25)
+└─ Sort spent DESC  (rows=65 cost=140.25)
+   └─ Project name, sum(oi.quantity * oi.unit_price)  (rows=65 cost=139.26)
+      └─ Filter sum(oi.quantity) > 3  (rows=65 cost=138.94)
+         └─ HashAggregate group by c.name; sum(oi.quantity * oi.unit_price), sum(oi.quantity)  (rows=196 cost=138.45)
+            └─ HashJoin INNER on oi.order_id = o.id  (rows=624 cost=132.21)
+               ├─ SeqScan order_items oi  (rows=2497 cost=74.97)
+               └─ HashJoin INNER on o.customer_id = c.id  (rows=250 cost=41.63)
+                  ├─ SeqScan orders o filter: o.status = 'delivered'  (rows=250 cost=30)
+                  └─ SeqScan customers c  (rows=200 cost=6)"
+`;
+
+exports[`plan snapshots > matches the recorded plans on the sample dataset > SELECT name FROM customers WHERE city = 'Đà Lạt' ORDER BY name LIMIT 3 1`] = `
+"Limit limit 3  (rows=3 cost=6.27)
+└─ Sort name  (rows=20 cost=6.27)
+   └─ Project customers.name  (rows=20 cost=6.05)
+      └─ SeqScan customers filter: customers.city = 'Đà Lạt'  (rows=20 cost=6)"
+`;
+
+exports[`plan snapshots > matches the recorded plans on the sample dataset > SELECT p.name FROM products p WHERE p.id NOT IN (SELECT product_id FROM order_items) 1`] = `
+"Project p.name  (rows=60 cost=4.35)
+└─ SeqScan products p filter: p.id NOT IN (subquery 1)  (rows=60 cost=4.2)"
+`;
+
+exports[`plan snapshots > matches the recorded plans on the sample dataset > SELECT status, count(*) FROM orders GROUP BY status ORDER BY 2 DESC 1`] = `
+"Sort count(*) DESC  (rows=4 cost=37.54)
+└─ Project status, count(*)  (rows=4 cost=37.52)
+   └─ HashAggregate group by orders.status; count(*)  (rows=4 cost=37.5)
+      └─ SeqScan orders  (rows=1000 cost=30)"
+`;
+
+exports[`plan snapshots > matches the recorded plans on the sample dataset > UPDATE orders SET status = 'shipped' WHERE id IN (1, 2, 3) 1`] = `
+"Update orders  (rows=3 cost=6.63)
+└─ IndexScan orders using orders_pkey (id IN (1, 2, 3))  (rows=3 cost=6.63)"
+`;
